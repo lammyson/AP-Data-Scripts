@@ -12,10 +12,9 @@ def get_file_safe_name(name: str) -> str:
 
 
 class GetRoomData():
+    _room_suuid: str
+    _output_folder: Path
     _debug = False
-
-    def set_debug(self, debug: bool):
-        self._debug = debug
 
     async def _download_from_endpoint_to_file(
             self,
@@ -35,8 +34,7 @@ class GetRoomData():
                 print(f"Wrote {endpoint_pretty_name} to {file}")
                 return response.json()
 
-    async def _main(self):
-        # Parse arguments
+    def _parse_arguments(self):
         parser = argparse.ArgumentParser(description="Downloads data from an Archipelago room")
         parser.add_argument(
             "-r", "--room-suuid",
@@ -55,13 +53,19 @@ class GetRoomData():
             help="Print debug statements and files")
         args = parser.parse_args()
 
+        self._room_suuid = args.room_suuid
+        self._output_folder = args.output_folder
+        self._debug = args.debug
+
+    async def download_room_data(self, room_suuid: str, output_folder: Path, debug: bool = False):
+        self._room_suuid = room_suuid
+        self._output_folder = output_folder
+        self._debug = debug
+
         # Create output folder and get the current time
-        output_folder: str = f"{args.output_folder}"
         Path(output_folder).mkdir(parents=True, exist_ok=True)
         Path(".datapackages").mkdir(parents=True, exist_ok=True)
         now_time = datetime.now(tz=timezone.utc)
-
-        self._debug = args.debug
 
         # Verify the time the data was last fetched so that we don't request data too quickly
         cache_timeout_s = 1800
@@ -76,10 +80,7 @@ class GetRoomData():
                           "Not downloading room data")
                     exit(0)
 
-        room_suuid: str = ""
-        if args.room_suuid is not None:
-            print(f"Using room_suuid={args.room_suuid}")
-            room_suuid = args.room_suuid
+        print(f"Using room_suuid={room_suuid}")
 
         # Verify the output folder is for the requested room
         if room_suuid and Path(f"{output_folder}/suuids.json").is_file():
@@ -174,6 +175,13 @@ class GetRoomData():
         with open(f"{output_folder}/last_fetched.json", "w") as f:
             json.dump(last_fetched_json, f)
             print(f"Wrote last_fetched to {output_folder}/last_fetched.json")
+
+    async def _main(self):
+        self._parse_arguments()
+        await self.download_room_data(
+            room_suuid=self._room_suuid,
+            output_folder=self._output_folder,
+            debug=self._debug)
 
 
 if __name__ == "__main__":
