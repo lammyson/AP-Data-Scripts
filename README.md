@@ -38,9 +38,9 @@ source .venv/bin/activate # bash
 pip install --upgrade pip
 
 # Install python depedencies. Use the file that matches your OS
-# Note: mac os is untested. Try using requirements_windows.txt for mac os
 pip install -r requirements_linux.txt
 pip install -r requirements_windows.txt
+pip install -r requirements_macos.txt
 ```
 
 ### Every time you open a new terminal after the first time setup is complete

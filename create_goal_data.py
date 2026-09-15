@@ -168,7 +168,7 @@ def main():
 
     # Go through each slot and parse the relevant goal data for each game
     goal_data: list[GoalData] = []
-    for idx, slot in enumerate(slot_data):
+    for slot in slot_data:
         goal: GoalData = GoalData()
         goal.player = room_status["players"][slot["player"]-1][0]
         goal.game = room_status["players"][slot["player"]-1][1]

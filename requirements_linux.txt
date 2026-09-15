@@ -10,6 +10,6 @@
 
 argparse>=1.4.0
 datetime>=6.0
+httpx>=0.28.1
 pathlib>=1.0.1
 pygraphviz>=2.0.1
-requests>=2.34.2
