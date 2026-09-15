@@ -6,8 +6,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+
 def get_file_safe_name(name: str) -> str:
     return "".join(c for c in name if c not in '<>:"/\\|?*')
+
 
 class GetRoomData():
     _debug = False
@@ -16,7 +18,12 @@ class GetRoomData():
         self._debug = debug
 
     async def _download_from_endpoint_to_file(
-            self, endpoint: str, endpoint_pretty_name: str, file: Path, client: httpx.AsyncClient, semaphore: asyncio.Semaphore) -> dict[str, Any]:
+            self,
+            endpoint: str,
+            endpoint_pretty_name: str,
+            file: Path,
+            client: httpx.AsyncClient,
+            semaphore: asyncio.Semaphore) -> dict[str, Any]:
         async with semaphore:
             if self._debug:
                 print(f"Requesting {endpoint_pretty_name} https://archipelago.gg/api/{endpoint}")
@@ -65,7 +72,7 @@ class GetRoomData():
                 old_time = datetime.strptime(last_fetched["last_fetched"], "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
                 if (now_time - old_time).seconds <= cache_timeout_s:
                     print(f"Data was last downloaded {(now_time - old_time).seconds} seconds ago "
-                          "which is less than the {cache_timeout_s} second ({cache_timeout_s/60:g} minute) cache timer. "
+                          f"which is less than the {cache_timeout_s} second ({cache_timeout_s/60:g} minute) cache timer. "
                           "Not downloading room data")
                     exit(0)
 
@@ -79,11 +86,13 @@ class GetRoomData():
             with open(f"{output_folder}/suuids.json", "r") as f:
                 suuids = json.load(f)
             if "room_suuid" in suuids and suuids["room_suuid"] != room_suuid:
-                print(f"Provided room_suuid={room_suuid} does not match the {output_folder}/suuids.json room_suuid={suuids["room_suuid"]}. "
-                        "Please choose a different folder or delete {output_folder}/suuids.json if you want to use the existing folder")
+                print(f"Provided room_suuid={room_suuid} does not match "
+                      f"the {output_folder}/suuids.json room_suuid={suuids["room_suuid"]}. "
+                      f"Please choose a different folder or delete {output_folder}/suuids.json "
+                      "if you want to use the existing folder")
                 exit(1)
 
-        sem = asyncio.Semaphore(5)
+        sem = asyncio.Semaphore(4)
         async with httpx.AsyncClient(timeout=60) as client:
             # /room_status/<suuid:room_id>
             # Cache timer: None
@@ -100,8 +109,10 @@ class GetRoomData():
                 with open(f"{output_folder}/suuids.json", "r") as f:
                     suuids = json.load(f)
                 if "tracker_suuid" in suuids and suuids["tracker_suuid"] != tracker_suuid:
-                    print(f"Provided tracker_suuid={tracker_suuid} does not match the {output_folder}/suuids.json tracker_suuid={suuids["tracker_suuid"]}. "
-                            "Please choose a different folder or delete {output_folder}/suuids.json if you want to use the existing folder")
+                    print(f"Provided tracker_suuid={tracker_suuid} does not match "
+                          f"the {output_folder}/suuids.json tracker_suuid={suuids["tracker_suuid"]}. "
+                          f"Please choose a different folder or delete {output_folder}/suuids.json "
+                          "if you want to use the existing folder")
                     exit(1)
 
             suuids = {
@@ -163,6 +174,7 @@ class GetRoomData():
         with open(f"{output_folder}/last_fetched.json", "w") as f:
             json.dump(last_fetched_json, f)
             print(f"Wrote last_fetched to {output_folder}/last_fetched.json")
+
 
 if __name__ == "__main__":
     asyncio.run(GetRoomData()._main())

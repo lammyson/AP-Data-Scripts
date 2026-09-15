@@ -105,28 +105,34 @@ def main():
     hint_chain_group.add_argument(
         "--hint-chain-slot",
         metavar="SLOT",
-        help="Slot name of the slot the hint chain will be centered around. Requires one of the --[child-|parent-]depth options")
+        help="Slot name of the slot the hint chain will be centered around. "
+        "Requires one of the --[child-|parent-]depth options")
     hint_chain_group.add_argument(
         "--depth",
         metavar="DEPTH",
         type=int,
-        help="Sets how deep in the hint chain to display in both directions. Requires the --hint-chain-slot option")
+        help="Sets how deep in the hint chain to display in both directions. "
+        "Requires the --hint-chain-slot option")
     hint_chain_group.add_argument(
         "--child-depth",
         metavar="DEPTH",
         type=int,
-        help="Sets how deep in the hint chain to display for slots that depend on you. Requires the --hint-chain-slot option. Overrides --depth option")
+        help="Sets how deep in the hint chain to display for slots that depend on you. "
+        "Requires the --hint-chain-slot option. Overrides --depth option")
     hint_chain_group.add_argument(
         "--parent-depth",
         metavar="DEPTH",
         type=int,
-        help="Sets how deep in the hint chain to display for slots that you depend on. Requires the --hint-chain-slot option. Overrides --depth option")
+        help="Sets how deep in the hint chain to display for slots that you depend on. "
+        "Requires the --hint-chain-slot option. Overrides --depth option")
 
     output_group = parser.add_argument_group("File output options (optional)")
     output_group.add_argument(
         "-o", "--output-filename",
         metavar="FILE",
-        help="Partial output filename for the graph. Data fetch date and extension are appended. Example: <output-filename>_<fetch-date>.svg")
+        help="Partial output filename for the graph. "
+        "Data fetch date and extension are appended. "
+        "Example: <output-filename>_<fetch-date>.svg")
     output_group.add_argument(
         "--output-format",
         default="svg",
@@ -136,7 +142,8 @@ def main():
         "--output-engine",
         default="dot",
         choices=["dot", "circo"],
-        help="Layout engine for graphviz to use when creating the hint graph. Default is dot")
+        help="Layout engine for graphviz to use when creating the hint graph. "
+        "Default is dot")
 
     args = parser.parse_args()
     debug: bool = args.debug
@@ -188,7 +195,8 @@ def main():
     if depth_option_provided and not hint_chain_slot_provided:
         parser.error("The --hint-chain-slot argument is required when using --depth|--child-depth|--parent-depth")
     if hint_chain_slot_provided and not depth_option_provided:
-        parser.error("At least one of the --depth|--child-depth|--parent-depth arguments are required when using --hint-chain-slot")
+        parser.error("At least one of the --depth|--child-depth|--parent-depth arguments are required "
+                     "when using --hint-chain-slot")
 
     # TODO - Filter out nodes with >= some number of hints to find - Make this configurable
     high_hint_count: int = 2147483647
@@ -224,7 +232,9 @@ def main():
         matches = [[idx, player] for idx, player in enumerate(room_status["players"]) if player[0] == hint_chain_slot_name]
 
         if len(matches) == 0:
-            parser.error(f"Error parsing --hint-chain-slot. slot_name={hint_chain_slot_name} not found. Please check your spelling")
+            parser.error(f"Error parsing --hint-chain-slot. "
+                         f"slot_name={hint_chain_slot_name} not found. "
+                         "Please check your spelling")
         elif len(matches) >= 2:
             error_json = []
             for match in matches:
@@ -233,7 +243,10 @@ def main():
                     "player": match[0]+1,
                     "slot_name": match[1][0]
                 })
-            parser.error(f"Error parsing --hint-chain-slot. slot_name={hint_chain_slot_name} found multiple times. This should never happen. Run get-room-info.py to pull fresh data\n\t{error_json}")
+            parser.error(f"Error parsing --hint-chain-slot. "
+                         f"slot_name={hint_chain_slot_name} found multiple times. "
+                         "This should never happen. "
+                         f"Run get-room-info.py to pull fresh data\n\t{error_json}")
 
         hint_chain_slot_id = matches[0][0]+1
 
@@ -245,7 +258,9 @@ def main():
             matches = [[idx, player] for idx, player in enumerate(room_status["players"]) if player[0] == slot]
 
             if len(matches) == 0:
-                parser.error(f"Error parsing --highlight-slots. slot_name={slot} not found. Please check your spelling")
+                parser.error(f"Error parsing --highlight-slots. "
+                             f"slot_name={slot} not found. "
+                             "Please check your spelling")
             elif len(matches) >= 2:
                 error_json = []
                 for match in matches:
@@ -254,7 +269,10 @@ def main():
                         "player": match[0]+1,
                         "slot_name": match[1][0]
                     })
-                parser.error(f"Error parsing --highlight-slots. slot_name={slot} found multiple times. This should never happen. Run get-room-info.py to pull fresh data\n\t{error_json}")
+                parser.error(f"Error parsing --highlight-slots. "
+                             f"slot_name={slot} found multiple times. "
+                             "This should never happen. "
+                             f"Run get-room-info.py to pull fresh data\n\t{error_json}")
 
             slot_ids_to_highlight.append(matches[0][0]+1)
 
@@ -308,7 +326,8 @@ def main():
     print(action_string)
 
     # Flatten all the tracker["hints"][idx]["hints"] into a single list of dicts while getting rid of dupes
-    finding_player_count = [0] * (len(static_tracker["player_game"]) + len(static_tracker["groups"]) + 1)  # Add 1 for the special Archipelago slot at slot 0
+    # Add 1 for the special Archipelago slot at slot 0
+    finding_player_count = [0] * (len(static_tracker["player_game"]) + len(static_tracker["groups"]) + 1)
     hints_raw_unique: list[Hint] = []
     for hint_dict in tracker["hints"]:
         for h in hint_dict["hints"]:
@@ -394,8 +413,10 @@ def main():
         if hint.finding_player in high_hint_count_slots:
             continue
 
-        location = [k for k, v in room_datapackages[hints_processed[hint.finding_player].game]["location_name_to_id"].items() if v == hint.location]
-        item = [k for k, v in room_datapackages[hints_processed[hint.receiving_player].game]["item_name_to_id"].items() if v == hint.item]
+        location = [k for k, v in room_datapackages[hints_processed[hint.finding_player].game]["location_name_to_id"].items()
+                    if v == hint.location]
+        item = [k for k, v in room_datapackages[hints_processed[hint.receiving_player].game]["item_name_to_id"].items()
+                if v == hint.item]
 
         hints_processed[hint.finding_player].hints_to_find.append(HintProcessed(
             finding_player=hint.finding_player,
@@ -460,7 +481,12 @@ def main():
     # Highlight nodes if they are called out even if they won't connect to the graph with current settings
     if slot_ids_to_highlight:
         for slot_id in slot_ids_to_highlight:
-            dot.add_node(f"{hints_processed[slot_id].player_num}", label=hints_processed[slot_id].node_name, color="darkgreen", fillcolor="darkgreen", style="filled", fontcolor="white")
+            dot.add_node(f"{hints_processed[slot_id].player_num}",
+                         label=hints_processed[slot_id].node_name,
+                         color="darkgreen",
+                         fillcolor="darkgreen",
+                         style="filled",
+                         fontcolor="white")
 
     # Add all hints
     for index in visited_nodes:
@@ -486,6 +512,7 @@ def main():
 
     execution_time = end_time - start_time
     print(f"Hint graph creation took {execution_time:.6f} seconds to run")
+
 
 if __name__ == "__main__":
     main()

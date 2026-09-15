@@ -34,6 +34,7 @@ class GoalData():
     radio_tower_count: int | None = None
     randomize_pokedex: str | None = None
 
+
 class PokemonEmerald():
     @staticmethod
     def ParseGoalData(slot: dict[str, Any], goal: GoalData):
@@ -74,8 +75,10 @@ class PokemonCrystal():
         goal.goal = PokemonCrystal.goal_to_string(slot["slot_data"]["goal"])
         match goal.goal:
             case "elite_four":
-                goal.victory_road_access = PokemonCrystal.victory_road_access_to_string(slot["slot_data"]["victory_road_access"])
-                goal.elite_four_requirement = PokemonCrystal.elite_four_requirement_to_string(slot["slot_data"]["elite_four_requirement"])
+                goal.victory_road_access = PokemonCrystal.victory_road_access_to_string(
+                    slot["slot_data"]["victory_road_access"])
+                goal.elite_four_requirement = PokemonCrystal.elite_four_requirement_to_string(
+                    slot["slot_data"]["elite_four_requirement"])
                 goal.elite_four_count = slot["slot_data"]["elite_four_count"]
             case "red":
                 goal.mt_silver_requirement = PokemonCrystal.requirement_to_string(slot["slot_data"]["mt_silver_requirement"])
@@ -85,12 +88,16 @@ class PokemonCrystal():
             case "diploma":
                 goal.randomize_pokedex = PokemonCrystal.randomize_pokedex_to_string(slot["slot_data"]["randomize_pokedex"])
             case "rival":
-                goal.victory_road_access = PokemonCrystal.victory_road_access_to_string(slot["slot_data"]["victory_road_access"])
-                goal.elite_four_requirement = PokemonCrystal.elite_four_requirement_to_string(slot["slot_data"]["elite_four_requirement"])
+                goal.victory_road_access = PokemonCrystal.victory_road_access_to_string(
+                    slot["slot_data"]["victory_road_access"])
+                goal.elite_four_requirement = PokemonCrystal.elite_four_requirement_to_string(
+                    slot["slot_data"]["elite_four_requirement"])
                 goal.elite_four_count = slot["slot_data"]["elite_four_count"]
             case "defeat_team_rocket":
-                goal.red_gyarados_access = PokemonCrystal.red_gyarados_access_to_string(slot["slot_data"]["red_gyarados_access"])
-                goal.radio_tower_requirement = PokemonCrystal.requirement_to_string(slot["slot_data"]["radio_tower_requirement"])
+                goal.red_gyarados_access = PokemonCrystal.red_gyarados_access_to_string(
+                    slot["slot_data"]["red_gyarados_access"])
+                goal.radio_tower_requirement = PokemonCrystal.requirement_to_string(
+                    slot["slot_data"]["radio_tower_requirement"])
                 goal.radio_tower_count = slot["slot_data"]["radio_tower_count"]
             case "unown_hunt":
                 pass
@@ -145,8 +152,10 @@ class PokemonCrystal():
             case 2: return "randomize"
             case _: return "Unknown randomize_pokedex"
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Output goal data in a more human readable format. Requires the room data from get-room-data.py")
+    parser = argparse.ArgumentParser(
+        description="Output goal data in a more human readable format. Requires the room data from get_room_data.py")
     parser.add_argument(
         "-f", "--data-folder",
         required=True,
@@ -192,6 +201,7 @@ def main():
     with open(f"{data_folder}/goal_data.json", "w") as file:
         json.dump(goal_data_list_filtered, file, indent=3)
     print(f"Saved goal data to to {data_folder}/goal_data.json")
+
 
 if __name__ == "__main__":
     main()
