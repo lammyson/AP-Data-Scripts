@@ -72,7 +72,10 @@ def set_node_name(slot_name: str, alias: str | None, is_item_link: bool) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Create a hint graph of a room's hints. Graphs all hints by default.")
+    parser = argparse.ArgumentParser(
+        description="Create a hint graph of a room's hints. "
+        "Graphs all hints by default. "
+        "Requires room data from get_room_data.py")
     parser.add_argument(
         "-f", "--data-folder",
         required=True,
@@ -203,24 +206,25 @@ def main():
 
     # Load required data from cached API data
     data_folder: str = args.data_folder
-    with open(f"{data_folder}/last_fetched.json", "r") as file:
-        last_fetched = json.load(file)
-    with open(f"{data_folder}/room_status.json", "r") as file:
-        room_status = json.load(file)
-    with open(f"{data_folder}/tracker.json", "r") as file:
-        tracker = json.load(file)
-    with open(f"{data_folder}/static_tracker.json", "r") as file:
-        static_tracker = json.load(file)
+    with open(f"{data_folder}/last_fetched.json", "r") as f:
+        last_fetched = json.load(f)
+    with open(f"{data_folder}/room_status.json", "r") as f:
+        room_status = json.load(f)
+    with open(f"{data_folder}/tracker.json", "r") as f:
+        tracker = json.load(f)
+    with open(f"{data_folder}/static_tracker.json", "r") as f:
+        static_tracker = json.load(f)
     room_datapackages: dict[str, dict[str, Any]] = dict()
     for game, data in static_tracker["datapackage"].items():
         safe_game_name: str = get_file_safe_name(game)
         checksum: str = data["checksum"]
         datapackage_file = f".datapackages/{safe_game_name}/{checksum}.json"
         if Path(datapackage_file).is_file():
-            with open(datapackage_file) as file:
-                room_datapackages.update({game: json.load(file)})
+            with open(datapackage_file) as f:
+                room_datapackages.update({game: json.load(f)})
         else:
-            print(f"Skipping download of datapackage {data["checksum"]} {game}")
+            print(f"{datapackage_file} is required but does not exist. Run get_room_data.py first")
+            exit(1)
 
     # Validate slot id if it was provided
     hint_chain_slot_id: int = -1
@@ -341,8 +345,8 @@ def main():
     high_hint_count_slots = [index + 1 for index, value in enumerate(finding_player_count) if value >= high_hint_count]
 
     if debug:
-        with open(f"{data_folder}/make-hint-graph-debug/hints_raw_unique.json", "w") as file:
-            json.dump(hints_raw_unique, file, indent=3)
+        with open(f"{data_folder}/make-hint-graph-debug/hints_raw_unique.json", "w") as f:
+            json.dump(hints_raw_unique, f, indent=3)
 
     # Create the initial list of hints with
     hints_processed: list[PlayerHints] = []
@@ -392,8 +396,8 @@ def main():
         ))
 
     if debug:
-        with open(f"{data_folder}/make-hint-graph-debug/hints_processed_pre.json", "w") as file:
-            json.dump([asdict(hint) for hint in hints_processed], file, indent=3)
+        with open(f"{data_folder}/make-hint-graph-debug/hints_processed_pre.json", "w") as f:
+            json.dump([asdict(hint) for hint in hints_processed], f, indent=3)
 
     # Add hints to hints_processed
     for hint in hints_raw_unique:
@@ -439,8 +443,8 @@ def main():
         hints_processed[hint.receiving_player].has_hint = True
         hints_processed[hint.finding_player].has_hint = True
     if debug:
-        with open(f"{data_folder}/make-hint-graph-debug/hints_processed.json", "w") as file:
-            json.dump([asdict(hint) for hint in hints_processed], file, indent=3)
+        with open(f"{data_folder}/make-hint-graph-debug/hints_processed.json", "w") as f:
+            json.dump([asdict(hint) for hint in hints_processed], f, indent=3)
 
     # Create list of nodes to show
     visited_nodes: set[int] = set()

@@ -2,9 +2,9 @@
 
 Some scripts to help me learn python. Used to look at Archipelago data
 
-[`get_room_data.py`](get_room_data.py) - Gets data for an Archipelago room and stores to json  
-[`create_hint_graph.py`](create_hint_graph.py) - Make a hint graph using the room data from above. Has a good number of options to show the data in different ways  
-[`create_goal_data.py`](create_goal_data.py) - Parses room data and outputs relevant goal data. Only supports Pokemon Emerald for now
+- [`get_room_data.py`](get_room_data.py) - Gets data for an Archipelago room and stores to json  
+- [`create_hint_graph.py`](create_hint_graph.py) - Creates a hint graph from room data. Has a good number of options to show the data in different ways  
+- [`create_goal_data.py`](create_goal_data.py) - Creates goal data json file from room data. Only supports some games
 
 Typical order of how to run scripts
 ```mermaid
@@ -19,6 +19,7 @@ flowchart TD;
 Run each python script with the `-h` or `--help` argument to see what you can do
 ```bash
 python get_room_data.py -h
+# A bunch of text will follow here detailing the arguments the script accepts
 ```
 
 # Setup
