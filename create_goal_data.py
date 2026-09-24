@@ -172,8 +172,8 @@ def main():
         parser.error(f"Data folder={args.data_folder} is not a directory")
 
     data_folder: str = args.data_folder
-    with open(f"{data_folder}/room_status.json", "r") as f:
-        room_status: dict[str, Any] = json.load(f)
+    with open(f"{data_folder}/players.json", "r") as f:
+        players: list[dict[str, str]] = json.load(f)
     with open(f"{data_folder}/slot_data_tracker.json", "r") as f:
         slot_data: list[dict[str, Any]] = json.load(f)
 
@@ -182,8 +182,8 @@ def main():
     for slot in slot_data:
         goal: GoalData = GoalData()
         goal.player_id = slot["player"]
-        goal.player = room_status["players"][slot["player"]-1][0]
-        goal.game = room_status["players"][slot["player"]-1][1]
+        goal.player = players[slot["player"]-1]["name"]
+        goal.game = players[slot["player"]-1]["game"]
 
         match goal.game:
             case "Pokemon Crystal":

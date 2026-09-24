@@ -208,8 +208,8 @@ def main():
     data_folder: str = args.data_folder
     with open(f"{data_folder}/last_fetched.json", "r") as f:
         last_fetched = json.load(f)
-    with open(f"{data_folder}/room_status.json", "r") as f:
-        room_status = json.load(f)
+    with open(f"{data_folder}/players.json", "r") as f:
+        players: list[dict[str, str]] = json.load(f)
     with open(f"{data_folder}/tracker.json", "r") as f:
         tracker = json.load(f)
     with open(f"{data_folder}/static_tracker.json", "r") as f:
@@ -233,7 +233,7 @@ def main():
     # TODO - support item_links
     hint_chain_slot_name: str | None = args.hint_chain_slot
     if hint_chain_slot_name:
-        matches = [[idx, player] for idx, player in enumerate(room_status["players"]) if player[0] == hint_chain_slot_name]
+        matches = [[idx, player] for idx, player in enumerate(players) if player["name"] == hint_chain_slot_name]
 
         if len(matches) == 0:
             parser.error(f"Error parsing --hint-chain-slot. "
@@ -259,7 +259,7 @@ def main():
     highlight_slots: list[str] = args.highlight_slots
     if highlight_slots:
         for slot in highlight_slots:
-            matches = [[idx, player] for idx, player in enumerate(room_status["players"]) if player[0] == slot]
+            matches = [[idx, player] for idx, player in enumerate(players) if player["name"] == slot]
 
             if len(matches) == 0:
                 parser.error(f"Error parsing --highlight-slots. "
@@ -307,7 +307,7 @@ def main():
     # Validation done. Tell the user what type of hint graph will be created
     action_string: str = "Creating hint"
     if depth_option_provided:
-        action_string += f" chain for slot {room_status["players"][hint_chain_slot_id-1][0]} showing"
+        action_string += f" chain for slot {players[hint_chain_slot_id-1]["name"]} showing"
         if show_parent_nodes and show_child_nodes:
             action_string += f" parent nodes at depth {parent_depth} and child nodes at depth {child_depth}"
         elif show_parent_nodes:
@@ -366,18 +366,18 @@ def main():
     ))
 
     # Add the normal slots
-    for (idx, slot_name_local) in enumerate(room_status["players"]):
+    for (idx, player) in enumerate(players):
         hints_processed.append(PlayerHints(
             player_num=tracker["aliases"][idx]["player"],
-            slot_name=slot_name_local[0],
-            game=slot_name_local[1],
+            slot_name=player["name"],
+            game=player["game"],
             alias=tracker["aliases"][idx]["alias"],
             has_goaled=tracker["player_status"][idx]["status"] == 30,
             hints_to_find=[],
             hints_for_others=[],
             has_hint=False,
             is_item_link=False,
-            node_name=set_node_name(slot_name=slot_name_local[0], alias=tracker["aliases"][idx]["alias"], is_item_link=False)
+            node_name=set_node_name(slot_name=player["name"], alias=tracker["aliases"][idx]["alias"], is_item_link=False)
         ))
 
     # Add item_links slots
