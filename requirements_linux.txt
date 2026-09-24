@@ -9,6 +9,7 @@
 --no-binary=pygraphviz
 
 argparse>=1.4.0
+beautifulsoup4>=4.15.0
 datetime>=6.0
 httpx>=0.28.1
 pathlib>=1.0.1

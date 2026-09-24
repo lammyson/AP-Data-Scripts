@@ -1,4 +1,5 @@
 import argparse
+from bs4 import BeautifulSoup
 import asyncio
 import httpx
 from datetime import datetime, timezone
@@ -12,9 +13,11 @@ def get_file_safe_name(name: str) -> str:
 
 
 class GetRoomData():
-    _room_suuid: str
+    _room_suuid: str | None = None
+    _tracker_suuid: str | None = None
     _output_folder: Path
     _debug = False
+    _suuids: dict[str, str] = {}
 
     async def _download_from_endpoint_to_file(
             self,
@@ -32,20 +35,149 @@ class GetRoomData():
             with open(file, "w") as f:
                 json.dump(response.json(), f)
                 print(f"Wrote {endpoint_pretty_name} to {file}")
-                return response.json()
+
+            return response.json()
+
+    async def _download_from_html_to_file(
+            self,
+            endpoint: str,
+            endpoint_pretty_name: str,
+            file: Path,
+            client: httpx.AsyncClient,
+            semaphore: asyncio.Semaphore) -> str:
+        async with semaphore:
+            if self._debug:
+                print(f"Requesting {endpoint_pretty_name} https://archipelago.gg/{endpoint}")
+            response: httpx.Response = await client.get(f"https://archipelago.gg/{endpoint}")
+            response.raise_for_status()
+
+            if self._debug:
+                Path(f"{self._output_folder}/get_room_data_debug").mkdir(parents=True, exist_ok=True)
+                with open(file, "w", encoding="utf-8") as f:
+                    f.write(response.text)
+                    print(f"Wrote {endpoint_pretty_name} to {file}")
+
+            return response.text
+
+    def _parse_tracker_checks_table(self, tracker_html: str) -> list[dict[str, Any]]:
+        soup = BeautifulSoup(markup=tracker_html, features="html.parser")
+        checks_table_html = soup.find("table", id="checks-table")
+        if checks_table_html is None or len(checks_table_html) == 0:
+            raise KeyError("table tag with id=check-table attribute not found in tracker html")
+
+        header_row = checks_table_html.find_all("th")
+        if header_row is None or len(header_row) == 0:
+            raise KeyError("th tag not found in checks-table")
+
+        header_text: list[str] = [header_text.get_text(separator=" ") for header_text in header_row]
+        if len(header_text) == 0:
+            raise RuntimeError("checks-table did not have any header text")
+
+        table_body = checks_table_html.find("tbody")
+        if table_body is None or len(table_body) == 0:
+            raise KeyError("tbody tag not found in checks-table")
+
+        table_flat_data = table_body.find_all("td")
+        if table_flat_data is None or len(table_flat_data) == 0:
+            raise KeyError("td tag not found in checks-table tbody")
+        if len(table_flat_data) % len(header_text) != 0:
+            raise RuntimeError("checks-table does not have expected amount of data")
+
+        num_cols = len(header_text)
+        row_data = [table_flat_data[i:i+num_cols] for i in range(0, len(table_flat_data), num_cols)]
+        checks_table: list[dict[str, Any]] = []
+        for row in row_data:
+            checks_table.append({
+                header_text[0]: row[0].get_text().strip(),
+                header_text[1]: row[1].get_text(),
+                header_text[2]: row[2].get_text(),
+                header_text[3]: row[3].get_text().strip(),
+                header_text[4]: row[4].get_text().strip(),
+                header_text[5]: row[5].get_text().strip(),
+                header_text[6]: row[6].get_text(),
+            })
+
+        if self._debug:
+            Path(f"{self._output_folder}/get_room_data_debug").mkdir(parents=True, exist_ok=True)
+            with open(f"{self._output_folder}/get_room_data_debug/checks_table.json", "w") as f:
+                json.dump(checks_table, f, indent=3)
+                print(f"Wrote tracker html checks-table to {self._output_folder}/checks_table.json")
+
+        return checks_table
+
+    def _room_status_to_players_json(self, room_status: dict[str, Any]):
+        players = [
+            {
+                "name": player_data[0],
+                "game": player_data[1]
+            }
+            for player_data in room_status["players"]
+        ]
+        file = f"{self._output_folder}/players.json"
+        with open(file, "w") as f:
+            json.dump(players, f)
+            print(f"Wrote players/games to {file}")
+
+    def _checks_table_to_players_json(self, checks_table: list[dict[str, Any]]):
+        players = [
+            {
+                "name": row["Name"],
+                "game": row["Game"]
+            }
+            for row in checks_table
+        ]
+        file = f"{self._output_folder}/players.json"
+        with open(file, "w") as f:
+            json.dump(players, f)
+            print(f"Wrote players/games to {file}")
+
+    def _load_suuids(self) -> dict[str, str]:
+        if self._suuids:
+            pass
+        elif Path(f"{self._output_folder}/suuids.json").is_file():
+            with open(f"{self._output_folder}/suuids.json", "r") as f:
+                self._suuids = json.load(f)
+        return self._suuids
+
+    def _verify_room_suuid(self, room_suuid: str | None):
+        suuids = self._load_suuids()
+        if room_suuid and suuids:
+            if "room_suuid" in suuids and suuids["room_suuid"] != room_suuid:
+                print(f"Provided room_suuid={room_suuid} does not match "
+                      f"the {self._output_folder}/suuids.json room_suuid={suuids["room_suuid"]}. "
+                      f"Please choose a different folder or delete {self._output_folder}/suuids.json "
+                      "if you want to use the existing folder")
+                exit(1)
+
+    def _verify_tracker_suuid(self, tracker_suuid: str | None):
+        suuids = self._load_suuids()
+        if tracker_suuid and suuids:
+            if "tracker_suuid" in suuids and suuids["tracker_suuid"] != tracker_suuid:
+                print(f"Provided tracker_suuid={tracker_suuid} does not match "
+                    f"the {self._output_folder}/suuids.json tracker_suuid={suuids["tracker_suuid"]}. "
+                    f"Please choose a different folder or delete {self._output_folder}/suuids.json "
+                    "if you want to use the existing folder")
+                exit(1)
 
     def _parse_arguments(self):
         parser = argparse.ArgumentParser(description="Downloads data from an Archipelago room")
-        parser.add_argument(
+        suuid_arg_group = parser.add_argument_group(
+            "suuid options",
+            description="Use these arguments to pass in a suuid. Only one of these are required"
+            ).add_mutually_exclusive_group(required=True)
+        suuid_arg_group.add_argument(
             "-r", "--room-suuid",
             type=str,
-            required=True,
-            help="Room SUUID. This is a string found in your room's URL. Example: https://archipelago.gg/<ROOM_SUUID>")
+            help="Room SUUID. This is a string found in your room's URL. Example: https://archipelago.gg/room/<ROOM_SUUID>")
+        suuid_arg_group.add_argument(
+            "-t", "--tracker-suuid",
+            type=str,
+            help="Tracker SUUID. This is a string found in your room's tracker's URL. Example: https://archipelago.gg/tracker/<TRACKER_SUUID>")
         parser.add_argument(
             "-f", "--output-folder",
             type=str,
             required=True,
-            help="Output folder. This is where all json files and graphs will be written")
+            help="Output folder. This is where all room specific data will be written")
         parser.add_argument(
             "-d", "--debug",
             default=False,
@@ -54,13 +186,19 @@ class GetRoomData():
         args = parser.parse_args()
 
         self._room_suuid = args.room_suuid
+        self._tracker_suuid = args.tracker_suuid
         self._output_folder = args.output_folder
         self._debug = args.debug
 
-    async def download_room_data(self, room_suuid: str, output_folder: Path, debug: bool = False):
+    async def download_room_data(self, output_folder: Path, room_suuid: str | None = None, tracker_suuid: str | None = None, debug: bool = False):
         self._room_suuid = room_suuid
+        self._tracker_suuid = tracker_suuid
         self._output_folder = output_folder
         self._debug = debug
+
+        # Verify only one suuid argument is set
+        if (room_suuid is None) == (tracker_suuid is None):
+            raise ValueError("Only one of room_suuid or tracker_suuid must be defined")
 
         # Create output folder and get the current time
         Path(output_folder).mkdir(parents=True, exist_ok=True)
@@ -80,46 +218,42 @@ class GetRoomData():
                           "Not downloading room data")
                     exit(0)
 
-        print(f"Using room_suuid={room_suuid}")
-
-        # Verify the output folder is for the requested room
-        if room_suuid and Path(f"{output_folder}/suuids.json").is_file():
-            with open(f"{output_folder}/suuids.json", "r") as f:
-                suuids = json.load(f)
-            if "room_suuid" in suuids and suuids["room_suuid"] != room_suuid:
-                print(f"Provided room_suuid={room_suuid} does not match "
-                      f"the {output_folder}/suuids.json room_suuid={suuids["room_suuid"]}. "
-                      f"Please choose a different folder or delete {output_folder}/suuids.json "
-                      "if you want to use the existing folder")
-                exit(1)
+        if room_suuid:
+            print(f"Using room_suuid={room_suuid}")
+            self._verify_room_suuid(room_suuid)
+        else:
+            print(f"Using tracker_suuid={tracker_suuid}")
+            self._verify_tracker_suuid(tracker_suuid)
 
         sem = asyncio.Semaphore(4)
         async with httpx.AsyncClient(timeout=60) as client:
-            # /room_status/<suuid:room_id>
-            # Cache timer: None
-            room_status = await self._download_from_endpoint_to_file(
-                endpoint=f"room_status/{room_suuid}",
-                endpoint_pretty_name="room_status",
-                file=Path(f"{output_folder}/room_status.json"),
-                client=client,
-                semaphore=sem)
-            tracker_suuid = room_status["tracker"]
+            if room_suuid:
+                # /room_status/<suuid:room_id>
+                # Cache timer: None
+                room_status = await self._download_from_endpoint_to_file(
+                    endpoint=f"room_status/{room_suuid}",
+                    endpoint_pretty_name="room_status",
+                    file=Path(f"{output_folder}/room_status.json"),
+                    client=client,
+                    semaphore=sem)
+                tracker_suuid = room_status["tracker"]
+                self._verify_tracker_suuid(tracker_suuid)
+                self._room_status_to_players_json(room_status=room_status)
+            else:
+                tracker_html = await self._download_from_html_to_file(
+                    endpoint=f"tracker/{tracker_suuid}",
+                    endpoint_pretty_name="tracker html",
+                    file=Path(f"{output_folder}/get_room_data_debug/tracker.html"),
+                    client=client,
+                    semaphore=sem)
+                checks_table: list[dict[str, Any]] = self._parse_tracker_checks_table(tracker_html=tracker_html)
+                self._checks_table_to_players_json(checks_table=checks_table)
 
-            # Verify the tracker suuid matches
-            if tracker_suuid and Path(f"{output_folder}/suuids.json").is_file():
-                with open(f"{output_folder}/suuids.json", "r") as f:
-                    suuids = json.load(f)
-                if "tracker_suuid" in suuids and suuids["tracker_suuid"] != tracker_suuid:
-                    print(f"Provided tracker_suuid={tracker_suuid} does not match "
-                          f"the {output_folder}/suuids.json tracker_suuid={suuids["tracker_suuid"]}. "
-                          f"Please choose a different folder or delete {output_folder}/suuids.json "
-                          "if you want to use the existing folder")
-                    exit(1)
-
-            suuids = {
-                "room_suuid": room_suuid,
-                "tracker_suuid": tracker_suuid
-            }
+            suuids = {}
+            if room_suuid:
+                suuids.update({"room_suuid": room_suuid})
+            if tracker_suuid:
+                suuids.update({"tracker_suuid": tracker_suuid})
             with open(f"{output_folder}/suuids.json", "w") as f:
                 json.dump(suuids, f)
                 print(f"Wrote suuids to {output_folder}/suuids.json")
@@ -179,8 +313,9 @@ class GetRoomData():
     async def _main(self):
         self._parse_arguments()
         await self.download_room_data(
-            room_suuid=self._room_suuid,
             output_folder=self._output_folder,
+            room_suuid=self._room_suuid,
+            tracker_suuid=self._tracker_suuid,
             debug=self._debug)
 
 

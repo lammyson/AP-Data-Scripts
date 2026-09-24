@@ -9,7 +9,7 @@ Some scripts to help me learn python. Used to look at Archipelago data
 Typical order of how to run scripts
 ```mermaid
 flowchart TD;
-   A["get_room_data.py (at least once)"];
+   A["get_room_data.py (at least once, and as-needed afterwards)"];
    B[create_hint_graph.py];
    C[create_goal_data.py];
    A --> B;
@@ -38,7 +38,7 @@ source .venv/bin/activate # bash
 # Upgrade pip
 pip install --upgrade pip
 
-# Install python depedencies. Use the file that matches your OS
+# Install python dependencies. Use the file that matches your OS
 pip install -r requirements_linux.txt
 pip install -r requirements_windows.txt
 pip install -r requirements_macos.txt
