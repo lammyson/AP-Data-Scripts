@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any
+import warnings
 
 
 def get_file_safe_name(name: str) -> str:
@@ -25,18 +26,25 @@ class GetRoomData():
             endpoint_pretty_name: str,
             file: Path,
             client: httpx.AsyncClient,
-            semaphore: asyncio.Semaphore) -> dict[str, Any]:
+            semaphore: asyncio.Semaphore,
+            raise_error: bool = True) -> dict[str, Any]:
         async with semaphore:
             if self._debug:
                 print(f"Requesting {endpoint_pretty_name} https://archipelago.gg/api/{endpoint}")
             response: httpx.Response = await client.get(f"https://archipelago.gg/api/{endpoint}")
-            response.raise_for_status()
 
-            with open(file, "w") as f:
-                json.dump(response.json(), f)
-                print(f"Wrote {endpoint_pretty_name} to {file}")
+            if raise_error:
+                response.raise_for_status()
 
-            return response.json()
+
+            if not response.is_error:
+                with open(file, "w") as f:
+                    json.dump(response.json(), f)
+                    print(f"Wrote {endpoint_pretty_name} to {file}")
+                return response.json()
+            else:
+                warnings.warn(f"Unable to download {endpoint_pretty_name}. Continuing...", RuntimeWarning)
+                return {}
 
     async def _download_from_html_to_file(
             self,
@@ -161,6 +169,7 @@ class GetRoomData():
 
     def _parse_arguments(self):
         parser = argparse.ArgumentParser(description="Downloads data from an Archipelago room")
+
         suuid_arg_group = parser.add_argument_group(
             "suuid options",
             description="Use these arguments to pass in a suuid. Only one of these are required"
@@ -173,6 +182,7 @@ class GetRoomData():
             "-t", "--tracker-suuid",
             type=str,
             help="Tracker SUUID. This is a string found in your room's tracker's URL. Example: https://archipelago.gg/tracker/<TRACKER_SUUID>")
+
         parser.add_argument(
             "-f", "--output-folder",
             type=str,
@@ -183,6 +193,7 @@ class GetRoomData():
             default=False,
             action="store_true",
             help="Print debug statements and files")
+
         args = parser.parse_args()
 
         self._room_suuid = args.room_suuid
@@ -284,7 +295,8 @@ class GetRoomData():
                     endpoint_pretty_name="slot_data_tracker",
                     file=Path(f"{output_folder}/slot_data_tracker.json"),
                     client=client,
-                    semaphore=sem))
+                    semaphore=sem,
+                    raise_error=False))
 
             static_tracker = static_tracker_task.result()
 

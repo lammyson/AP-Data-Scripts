@@ -139,7 +139,7 @@ def main():
     output_group.add_argument(
         "--output-format",
         default="svg",
-        choices=["svg", "jpg"],
+        choices=["svg", "jpg", "png"],
         help="Output file format. Default is svg")
     output_group.add_argument(
         "--output-engine",
@@ -202,6 +202,11 @@ def main():
                      "when using --hint-chain-slot")
 
     # TODO - Filter out nodes with >= some number of hints to find - Make this configurable
+    # - Kinda broken. It filters out players that have high numbers of hints to find
+    #   but when players that have hints to receive are looking for the slots that
+    #   are sending them hints, these big slots get pulled in
+    # - hint-chain-slot and depth options do a good job of reducing the noise of big
+    #   slots so maybe just use that instead
     high_hint_count: int = 2147483647
 
     # Load required data from cached API data
