@@ -326,8 +326,10 @@ class GetRoomData():
                             client=client,
                             semaphore=sem))
 
-                if checks_table is not None:
-                    self._checks_table_to_players_json(checks_table=checks_table, aliases=tracker["aliases"])
+        if checks_table is not None:
+            self._checks_table_to_players_json(
+                checks_table=checks_table,
+                aliases=tracker["aliases"])
 
         last_fetched_json = {"last_fetched": datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")}
         with open(f"{output_folder}/last_fetched.json", "w") as f:
