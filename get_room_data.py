@@ -126,13 +126,20 @@ class GetRoomData():
             json.dump(players, f)
             print(f"Wrote players/games to {file}")
 
-    def _checks_table_to_players_json(self, checks_table: list[dict[str, Any]]):
+    def _get_slot_name_from_name_with_alias(self, slot_name: str, alias: str | None):
+        if alias is not None:
+            alias_string = f"{alias} "
+            if slot_name.startswith(alias_string):
+                slot_name = slot_name.replace(alias_string, "")[1:-1]
+        return slot_name
+
+    def _checks_table_to_players_json(self, checks_table: list[dict[str, Any]], aliases: list[dict[str, Any]]):
         players = [
             {
-                "name": row["Name"],
+                "name": self._get_slot_name_from_name_with_alias(slot_name=row["Name"], alias=aliases[idx]["alias"]),
                 "game": row["Game"]
             }
-            for row in checks_table
+            for idx, row in enumerate(checks_table)
         ]
         file = f"{self._output_folder}/players.json"
         with open(file, "w") as f:
@@ -238,6 +245,7 @@ class GetRoomData():
 
         sem = asyncio.Semaphore(4)
         async with httpx.AsyncClient(timeout=60) as client:
+            checks_table: list[dict[str, Any]] | None = None
             if room_suuid:
                 # /room_status/<suuid:room_id>
                 # Cache timer: None
@@ -257,8 +265,7 @@ class GetRoomData():
                     file=Path(f"{output_folder}/get_room_data_debug/tracker.html"),
                     client=client,
                     semaphore=sem)
-                checks_table: list[dict[str, Any]] = self._parse_tracker_checks_table(tracker_html=tracker_html)
-                self._checks_table_to_players_json(checks_table=checks_table)
+                checks_table = self._parse_tracker_checks_table(tracker_html=tracker_html)
 
             suuids = {}
             if room_suuid:
@@ -272,7 +279,7 @@ class GetRoomData():
             async with asyncio.TaskGroup() as tg:
                 # /tracker/<suuid:tracker>
                 # Cache timer: 60 seconds
-                tg.create_task(self._download_from_endpoint_to_file(
+                tracker_task = tg.create_task(self._download_from_endpoint_to_file(
                     endpoint=f"tracker/{tracker_suuid}",
                     endpoint_pretty_name="tracker",
                     file=Path(f"{output_folder}/tracker.json"),
@@ -298,10 +305,9 @@ class GetRoomData():
                     semaphore=sem,
                     raise_error=False))
 
+            tracker = tracker_task.result()
             static_tracker = static_tracker_task.result()
 
-            # /datapackage/<string:checksum>
-            # Cache timer: None
             async with asyncio.TaskGroup() as tg:
                 for game, data in static_tracker["datapackage"].items():
                     safe_game_name: str = get_file_safe_name(game)
@@ -310,12 +316,18 @@ class GetRoomData():
                     datapackage_file = Path(f"{game_folder}/{checksum}.json")
                     if not datapackage_file.is_file():
                         Path.mkdir(game_folder, parents=True, exist_ok=True)
+
+                        # /datapackage/<string:checksum>
+                        # Cache timer: None
                         tg.create_task(self._download_from_endpoint_to_file(
                             endpoint=f"datapackage/{checksum}",
                             endpoint_pretty_name=f"{game} datapackage",
                             file=datapackage_file,
                             client=client,
                             semaphore=sem))
+
+                if checks_table is not None:
+                    self._checks_table_to_players_json(checks_table=checks_table, aliases=tracker["aliases"])
 
         last_fetched_json = {"last_fetched": datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")}
         with open(f"{output_folder}/last_fetched.json", "w") as f:
