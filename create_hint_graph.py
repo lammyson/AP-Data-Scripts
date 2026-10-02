@@ -460,28 +460,39 @@ def main():
 
     # Show nodes that depend on us
     if show_child_nodes:
-        nodes: list[PlayerHints] = [hints_processed[hint_chain_slot_id]]
+        nodes_to_visit: list[PlayerHints] = [hints_processed[hint_chain_slot_id]]
+        nodes_next_loop: list[PlayerHints] = []
         visited_nodes_child: set = set([hints_processed[hint_chain_slot_id].player_num])
-        while nodes and child_depth > 0:
+        while child_depth > 0:
+            while nodes_to_visit:
+                current_node = nodes_to_visit.pop()
+                for hint in current_node.hints_to_find:
+                    if hint.receiving_player not in visited_nodes_child:
+                        visited_nodes_child.add(hint.receiving_player)
+                        nodes_next_loop.append(hints_processed[hint.receiving_player])
+            # Reset for the next depth
+            nodes_to_visit = nodes_next_loop
+            nodes_next_loop = []
             child_depth -= 1
-            current_node = nodes.pop()
-            for hint in current_node.hints_to_find:
-                if hint.receiving_player not in visited_nodes_child:
-                    visited_nodes_child.add(hint.receiving_player)
-                    nodes.append(hints_processed[hint.receiving_player])
         visited_nodes.update(visited_nodes_child)
 
     # Show nodes that we depend on
     if show_parent_nodes:
-        nodes: list[PlayerHints] = [hints_processed[hint_chain_slot_id]]
+        nodes_to_visit: list[PlayerHints] = [hints_processed[hint_chain_slot_id]]
+        nodes_next_loop: list[PlayerHints] = []
         visited_nodes_parent: set = set([hints_processed[hint_chain_slot_id].player_num])
-        while nodes and parent_depth > 0:
+        while parent_depth > 0:
+            while nodes_to_visit:
+                current_node = nodes_to_visit.pop()
+                for hint in current_node.hints_for_others:
+                    if hint.finding_player not in visited_nodes_parent:
+                        visited_nodes_parent.add(hint.finding_player)
+                        nodes_next_loop.append(hints_processed[hint.finding_player])
+
+            # Reset for the next depth
+            nodes_to_visit = nodes_next_loop
+            nodes_next_loop = []
             parent_depth -= 1
-            current_node = nodes.pop()
-            for hint in current_node.hints_for_others:
-                if hint.finding_player not in visited_nodes_parent:
-                    visited_nodes_parent.add(hint.finding_player)
-                    nodes.append(hints_processed[hint.finding_player])
         visited_nodes.update(visited_nodes_parent)
 
     # Create the graph
@@ -498,6 +509,7 @@ def main():
                          fontcolor="white")
 
     # Add all hints
+    num_hints: int = 0
     for index in visited_nodes:
         player = hints_processed[index]
         if player.has_hint:
@@ -510,6 +522,10 @@ def main():
                     dot.add_edge(u=f"{hint.finding_player}",
                                  v=f"{hint.receiving_player}",
                                  label=label)
+                    num_hints += 1
+
+    print(f"Number of players={len(visited_nodes)}")
+    print(f"Number of num_hints={num_hints}")
 
     # Save it!
     print(f"Saving to {data_folder}/graphs/{output_filename}.{output_format}")
