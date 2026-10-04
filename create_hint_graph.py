@@ -9,9 +9,12 @@ import time
 
 from get_room_data import get_file_safe_name
 
-# TODO - Split this into 2 scripts
-# - One that processes the raw hints into hints_processed.json
-# - One that reads hints_processed.json and does all the display stuff
+# TODO - Make this into a library
+# - Function that processes the raw hints into hints_processed.json
+# - Function that takes the data from hints_processed.json and does all the display stuff
+# So then we can make a python script that does
+# - Process hints into hints_processed.json once
+# - Call the hint graph creation function multiple times with different args depending on what we want
 
 
 # https://github.com/ArchipelagoMW/Archipelago/blob/main/docs/network%20protocol.md#hintstatus
@@ -525,7 +528,7 @@ def main():
                     num_hints += 1
 
     print(f"Number of players={len(visited_nodes)}")
-    print(f"Number of num_hints={num_hints}")
+    print(f"Number of hints={num_hints}")
 
     # Save it!
     print(f"Saving to {data_folder}/graphs/{output_filename}.{output_format}")
