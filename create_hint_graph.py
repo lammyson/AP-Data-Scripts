@@ -102,6 +102,11 @@ def main():
         action="store_true",
         help="Show entrance info in the hint graph. Warning: This can add a lot of bloat to the hint graph")
     parser.add_argument(
+        "--show-found-hints",
+        default=False,
+        action="store_true",
+        help="Show found hints. Warning: This can add a lot of bloat to the hint graph")
+    parser.add_argument(
         "--show-goaled-slots",
         default=False,
         action="store_true",
@@ -159,6 +164,7 @@ def main():
         print(f"\tdata-folder={args.data_folder}")
         print(f"\thighlight-slots={args.highlight_slots}")
         print(f"\tshow-entrances={args.show_entrances}")
+        print(f"\tshow-found-hints={args.show_found_hints}")
         print(f"\tshow-goaled-slots={args.show_goaled_slots}")
         print(f"\thint-chain-slot={args.hint_chain_slot}")
         print(f"\tdepth={args.depth}")
@@ -170,6 +176,7 @@ def main():
         print("")
 
     show_entrances: bool = args.show_entrances
+    show_found_hints: bool = args.show_found_hints
     show_goaled_slots: bool = args.show_goaled_slots
     output_format = args.output_format
     output_engine = args.output_engine
@@ -296,11 +303,12 @@ def main():
 
     if debug:
         print("Just after argument validation")
-        print(f"\tdata-folder={data_folder}")
-        print(f"\thighlight-slots={highlight_slots}")
-        print(f"\tshow-entrances={show_entrances}")
-        print(f"\tshow-goaled-slots={show_goaled_slots}")
-        print(f"\thint-chain-slot={hint_chain_slot_name}")
+        print(f"\tdata_folder={data_folder}")
+        print(f"\thighlight_slots={highlight_slots}")
+        print(f"\tshow_entrances={show_entrances}")
+        print(f"\tshow_found_hints={show_found_hints}")
+        print(f"\tshow_goaled_slots={show_goaled_slots}")
+        print(f"\thint_chain_slot={hint_chain_slot_name}")
         print(f"\tshow_parent_nodes={show_parent_nodes}")
         print(f"\tparent_depth={parent_depth}")
         print(f"\tshow_child_nodes={show_child_nodes}")
@@ -331,6 +339,9 @@ def main():
 
     if show_entrances:
         action_string += "\n- And showing entrance information"
+
+    if show_found_hints:
+        action_string += "\n- And showing found hints"
 
     if show_goaled_slots:
         action_string += "\n- And showing goaled slots that have not received their hinted progression items"
@@ -410,7 +421,7 @@ def main():
     # Add hints to hints_processed
     for hint in hints_raw_unique:
         # Skip hints that were found
-        if hint.found:
+        if not show_found_hints and hint.found:
             continue
 
         # Skip non-progression hints
@@ -457,9 +468,9 @@ def main():
     # Create list of nodes to show
     visited_nodes: set[int] = set()
 
-    # Show all nodes if we're not looking for a specific chain
+    # Show all nodes if we're not looking for a specific chain. Also remove the special Archipelago server slot 0 from the list
     if not show_child_nodes and not show_parent_nodes:
-        visited_nodes.update([node.player_num for node in hints_processed])
+        visited_nodes.update([node.player_num for node in hints_processed if node.player_num != 0])
 
     # Show nodes that depend on us
     if show_child_nodes:
@@ -513,10 +524,12 @@ def main():
 
     # Add all hints
     num_hints: int = 0
+    num_players: int = 0
     for index in visited_nodes:
         player = hints_processed[index]
         if player.has_hint:
             dot.add_node(f"{player.player_num}", label=player.node_name)
+            num_players += 1
             for hint in player.hints_to_find:
                 if hint.finding_player in visited_nodes and hint.receiving_player in visited_nodes:
                     label = f"{hint.item_name} at {hint.location_name}"
@@ -527,7 +540,7 @@ def main():
                                  label=label)
                     num_hints += 1
 
-    print(f"Number of players={len(visited_nodes)}")
+    print(f"Number of players={num_players}")
     print(f"Number of hints={num_hints}")
 
     # Save it!
