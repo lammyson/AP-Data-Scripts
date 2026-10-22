@@ -33,9 +33,10 @@ class HintCsv(NamedTuple):
     """For printing hints to a CSV file to make a table similar to the Archipelago tracker page"""
     finding_player: str
     receiving_player: str
-    item_name: str  # Save the item_id lookup
-    location_name: str  # Save the location_id lookup
-    game: str
+    item_name: str
+    location_name: str
+    finding_game: str
+    receiving_game: str
     entrance: str
 
 
@@ -143,11 +144,12 @@ if output_detailed_hints:
             receiving_player=data["slot_info"][hint.receiving_player][0],
             item_name=item[0],
             location_name=location[0],
-            game=data["slot_info"][hint.finding_player][1],
+            finding_game=data["slot_info"][hint.finding_player][1],
+            receiving_game=data["slot_info"][hint.receiving_player][1],
             entrance=hint.entrance
         ))
 
-    table_headers: list[str] = ["Finder", "Receiver", "Item", "Location", "Game", "Entrance"]
+    table_headers: list[str] = ["Finder", "Receiver", "Item", "Location", "Finding Game", "Receiving Game", "Entrance"]
     if output_hints_csv:
         output_file: Path = Path(f"{file.parent}/{file.stem}.csv")
         with open(output_file, 'w') as f:
