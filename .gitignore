@@ -1,5 +1,10 @@
-.venv
-.datapackages
-
+# Folders
 __pycache__
+.datapackages
+.venv
 data
+
+# Data files
+*.archipelago
+*.csv
+*.json

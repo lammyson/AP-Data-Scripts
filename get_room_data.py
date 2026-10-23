@@ -36,7 +36,6 @@ class GetRoomData():
             if raise_error:
                 response.raise_for_status()
 
-
             if not response.is_error:
                 with open(file, "w") as f:
                     json.dump(response.json(), f)
@@ -169,9 +168,9 @@ class GetRoomData():
         if tracker_suuid and suuids:
             if "tracker_suuid" in suuids and suuids["tracker_suuid"] != tracker_suuid:
                 print(f"Provided tracker_suuid={tracker_suuid} does not match "
-                    f"the {self._output_folder}/suuids.json tracker_suuid={suuids["tracker_suuid"]}. "
-                    f"Please choose a different folder or delete {self._output_folder}/suuids.json "
-                    "if you want to use the existing folder")
+                      f"the {self._output_folder}/suuids.json tracker_suuid={suuids["tracker_suuid"]}. "
+                      f"Please choose a different folder or delete {self._output_folder}/suuids.json "
+                      "if you want to use the existing folder")
                 exit(1)
 
     def _parse_arguments(self):
@@ -184,11 +183,13 @@ class GetRoomData():
         suuid_arg_group.add_argument(
             "-r", "--room-suuid",
             type=str,
-            help="Room SUUID. This is a string found in your room's URL. Example: https://archipelago.gg/room/<ROOM_SUUID>")
+            help="Room SUUID. This is a string found in your room's URL. "
+                 "Example: https://archipelago.gg/room/<ROOM_SUUID>")
         suuid_arg_group.add_argument(
             "-t", "--tracker-suuid",
             type=str,
-            help="Tracker SUUID. This is a string found in your room's tracker's URL. Example: https://archipelago.gg/tracker/<TRACKER_SUUID>")
+            help="Tracker SUUID. This is a string found in your room's tracker's URL. "
+                 "Example: https://archipelago.gg/tracker/<TRACKER_SUUID>")
 
         parser.add_argument(
             "-f", "--output-folder",
@@ -208,7 +209,12 @@ class GetRoomData():
         self._output_folder = args.output_folder
         self._debug = args.debug
 
-    async def download_room_data(self, output_folder: Path, room_suuid: str | None = None, tracker_suuid: str | None = None, debug: bool = False):
+    async def download_room_data(
+            self,
+            output_folder: Path,
+            room_suuid: str | None = None,
+            tracker_suuid: str | None = None,
+            debug: bool = False):
         self._room_suuid = room_suuid
         self._tracker_suuid = tracker_suuid
         self._output_folder = output_folder

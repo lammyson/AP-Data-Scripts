@@ -28,6 +28,8 @@ python get_room_data.py -h
 
 ### First time setup
 ```bash
+# Install python 3.13 or below (unsure what the lowest version of python is supported)
+
 # Clone this repository with submodules (you can use whatever git/github client you want to do this)
 git clone https://github.com/lammyson/AP-Data-Scripts.git --recurse-submodules
 
