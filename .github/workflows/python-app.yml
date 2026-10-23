@@ -6,11 +6,13 @@ name: Python application
 on:
   push:
     paths:
+      - .flake8
       - .github/workflows/python-app.yml
       - requirements*.txt
       - '**/*.py'
   pull_request:
     paths:
+      - .flake8
       - .github/workflows/python-app.yml
       - requirements*.txt
       - '**/*.py'
