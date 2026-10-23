@@ -26,10 +26,11 @@ python get_room_data.py -h
 
 # Setup
 
-NOTE: Work in progress. Still figuring out how to get things set up consistently after adding the Archipelago source as a submodule. This only affects running [`parse_server_file.py`](parse_server_file.py)
-
 ### First time setup
 ```bash
+# Clone this repository with submodules (you can use whatever git/github client you want to do this)
+git clone https://github.com/lammyson/AP-Data-Scripts.git --recurse-submodules
+
 # Linux only. Look up your specific package manager if you don't use apt
 sudo apt install build-essential graphviz libgraphviz-dev
 

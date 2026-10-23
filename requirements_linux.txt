@@ -1,3 +1,5 @@
+-r Archipelago/requirements.txt
+
 # These packages are required for building pygraphviz from source
 # build-essential graphviz libgraphviz-dev
 
@@ -14,3 +16,4 @@ datetime>=6.0
 httpx>=0.28.1
 pathlib>=1.0.1
 pygraphviz>=2.0.1
+tabulate>=0.10.0

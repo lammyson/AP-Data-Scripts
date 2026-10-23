@@ -1,6 +1,9 @@
+-r Archipelago/requirements.txt
+
 argparse>=1.4.0
 beautifulsoup4>=4.15.0
 datetime>=6.0
 httpx>=0.28.1
 pathlib>=1.0.1
 pygraphviz>=2.0.1
+tabulate>=0.10.0
