@@ -32,7 +32,7 @@ python get_room_data.py -h
 git clone https://github.com/lammyson/AP-Data-Scripts.git --recurse-submodules
 
 # Linux only. Look up your specific package manager if you don't use apt
-sudo apt install build-essential graphviz libgraphviz-dev
+sudo apt install build-essential graphviz libgraphviz-dev libgvplugin-neato-layout-dev libgvplugin-gd-dev libgvplugin-pango-dev
 
 # Create a python virtual environment
 python -m venv .venv
@@ -55,3 +55,10 @@ pip install -r requirements_macos.txt
 source .venv/bin/activate # bash
 .\.venv\Scripts\Activate.ps1 # powershell
 ```
+
+# Credits
+- [Archipelago](https://archipelago.gg) - [source](https://github.com/ArchipelagoMW/Archipelago)
+- [beautifulsoup](https://pypi.org/project/beautifulsoup4)
+- [httpx](https://pypi.org/project/httpx)
+- [pygraphviz](https://pypi.org/project/pygraphviz)
+- [tabulate](https://pypi.org/project/tabulate)

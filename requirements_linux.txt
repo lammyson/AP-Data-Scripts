@@ -1,7 +1,7 @@
 -r Archipelago/requirements.txt
 
 # These packages are required for building pygraphviz from source
-# build-essential graphviz libgraphviz-dev
+# build-essential graphviz libgraphviz-dev libgvplugin-neato-layout-dev libgvplugin-gd-dev libgvplugin-pango-dev
 
 # This is here because the version of libfontconfig that comes with pygraphviz
 # is really old and prints warnings when it reads the system libfontconfig files
@@ -10,10 +10,7 @@
 # Some rough numbers on my machine improved the time for creating a hint graph from 7 seconds to 5 seconds
 --no-binary=pygraphviz
 
-argparse>=1.4.0
 beautifulsoup4>=4.15.0
-datetime>=6.0
 httpx>=0.28.1
-pathlib>=1.0.1
-pygraphviz>=2.0.1
+pygraphviz>=2.0.4
 tabulate>=0.10.0
