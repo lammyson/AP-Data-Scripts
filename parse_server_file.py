@@ -41,8 +41,8 @@ class SummaryTableRow(NamedTuple):
     name: str
     game: str
     locations: int
-    num_progression_locations: int
-    num_progression_locations_percent: str
+    num_priority_locations: int
+    num_priority_locations_percent: str
     num_hints_finder: int
     num_hints_receiver: int
     num_start_inventory: int
@@ -257,13 +257,13 @@ with warnings.catch_warnings():
 num_players: int = len(multidata["slot_info"])
 
 num_locations_per_player: list[int] = [0] * (num_players+1)
-num_progression_per_player: list[int] = [0] * (num_players+1)
+num_priority_locations_per_player: list[int] = [0] * (num_players+1)
 num_locations: int = 0
 for player_id, locations in multidata["locations"].items():
     player_locations: int = len(locations)
     num_locations += player_locations
     num_locations_per_player[player_id] = player_locations
-    num_progression_per_player[player_id] = len([item_id for item_id, receiving_player_id, item_flags in locations.values() if item_flags & 0b1])
+    num_priority_locations_per_player[player_id] = len([item_id for item_id, receiving_player_id, item_flags in locations.values() if item_flags & 0b1])
 
 num_start_inventory_per_player: list[int] = [0] * (num_players+1)
 num_start_inventory: int = 0
@@ -295,7 +295,7 @@ print()
 
 # Print a detailed summary
 if output_summary:
-    table_headers = ["Id", "Name", "Game", "Locations", "Progression Locations", "Progression %", "Start Hints - Finder", "Start Hints - Receiver", "Start Inventory"]
+    table_headers = ["Id", "Name", "Game", "Locations", "Priority Locations", "Priority %", "Start Hints - Finder", "Start Hints - Receiver", "Start Inventory"]
     table_data: list = []
     for slot_id, player in multidata["slot_info"].items():
         table_data.append(SummaryTableRow(
@@ -303,8 +303,8 @@ if output_summary:
             name=player.name,
             game=player.game,
             locations=num_locations_per_player[slot_id],
-            num_progression_locations=num_progression_per_player[slot_id],
-            num_progression_locations_percent=f"{num_progression_per_player[slot_id] / num_locations_per_player[slot_id] * 100:>7.3f} %",
+            num_priority_locations=num_priority_locations_per_player[slot_id],
+            num_priority_locations_percent=f"{num_priority_locations_per_player[slot_id] / num_locations_per_player[slot_id] * 100:>7.3f} %",
             num_hints_finder=num_start_hints_finder[slot_id],
             num_hints_receiver=num_start_hints_receiver[slot_id],
             num_start_inventory=num_start_inventory_per_player[slot_id]
@@ -320,7 +320,7 @@ if output_summary:
 
     if output_summary_table:
         table_data.append(SEPARATING_LINE)
-        table_data.append(["", "", "Totals", num_locations, sum(num_progression_per_player), "", sum(num_start_hints_finder), sum(num_start_hints_receiver), num_start_inventory])
+        table_data.append(["", "", "Totals", num_locations, sum(num_priority_locations_per_player), "", sum(num_start_hints_finder), sum(num_start_hints_receiver), num_start_inventory])
         print("\nSummary Table")
         print(tabulate(tabular_data=table_data, headers=table_headers, tablefmt="rounded_outline", preserve_whitespace=True))
         print()
