@@ -77,7 +77,7 @@ def set_node_name(slot_name: str, alias: str | None, is_item_link: bool) -> str:
 def main():
     parser = argparse.ArgumentParser(
         description="Create a hint graph of a room's hints. "
-        "Graphs all hints by default. "
+        "Graphs all unfound progression hints from all non-goaled slots by default. "
         "Requires room data from get_room_data.py")
     parser.add_argument(
         "-f", "--data-folder",
