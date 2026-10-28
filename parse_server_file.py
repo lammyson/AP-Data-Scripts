@@ -91,17 +91,6 @@ parser.add_argument(
     type=Path,
     metavar="FILE",
     help="(Required) .archipelago file")
-parser.add_argument(
-    "--output-csv-all",
-    default=False,
-    action="store_true",
-    help="Output csv files of all data")
-parser.add_argument(
-    "--output-table-all",
-    default=False,
-    action="store_true",
-    help="Output all tables to terminal. "
-         "NOTE: This can be giant. Recommend --output-csv-all option or choosing specific --output-*-table option(s)")
 
 parser.add_argument(
     "-d", "--debug",
@@ -113,11 +102,24 @@ parser.add_argument(
     default=False,
     action="store_true",
     help=argparse.SUPPRESS)
-parser.add_argument(
+
+general_output_group = parser.add_argument_group("General output options")
+general_output_group.add_argument(
+    "--output-csv-all",
+    default=False,
+    action="store_true",
+    help="Output csv files of all data")
+general_output_group.add_argument(
+    "--output-table-all",
+    default=False,
+    action="store_true",
+    help="Output all tables to terminal. "
+         "NOTE: This can be giant. Recommend --output-csv-all option or choosing specific --output-*-table option(s)")
+general_output_group.add_argument(
     "--output-server-options",
     default=False,
     action="store_true",
-    help=argparse.SUPPRESS)
+    help="Output server options")
 
 detailed_summary_group = parser.add_argument_group("Detailed summary options")
 detailed_summary_group.add_argument(
