@@ -66,9 +66,9 @@ class PlayerHints:
 
 def set_node_name(slot_name: str, alias: str | None, is_item_link: bool) -> str:
     if alias:
-        node_name = f"{alias} ({slot_name})"
+        node_name = f"{alias}\n({slot_name})"
     elif is_item_link:
-        node_name = f"item_link: {slot_name}"
+        node_name = f"item_link:\n{slot_name}"
     else:
         node_name = f"{slot_name}"
     return node_name
@@ -532,9 +532,9 @@ def main():
             num_players += 1
             for hint in player.hints_to_find:
                 if hint.finding_player in visited_nodes and hint.receiving_player in visited_nodes:
-                    label = f"{hint.item_name} at {hint.location_name}"
+                    label = f"{hint.item_name} at\n{hint.location_name}"
                     if hint.entrance and show_entrances:
-                        label = f"{label} ({hint.entrance})"
+                        label = f"{label}\n({hint.entrance})"
                     dot.add_edge(u=f"{hint.finding_player}",
                                  v=f"{hint.receiving_player}",
                                  label=label)
