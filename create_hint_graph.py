@@ -546,6 +546,7 @@ def main():
     # Save it!
     print(f"Saving to {data_folder}/graphs/{output_filename}.{output_format}")
     Path(f"{data_folder}/graphs").mkdir(parents=True, exist_ok=True)
+    dot.write(f"{data_folder}/graphs/{output_filename}.dot")
 
     start_time = time.perf_counter()
     dot.draw(path=f"{data_folder}/graphs/{output_filename}.{output_format}", format=output_format, prog=output_engine)
