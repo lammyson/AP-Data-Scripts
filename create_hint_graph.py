@@ -385,7 +385,7 @@ def main():
     ))
 
     # Add the normal slots
-    for (idx, player) in enumerate(players):
+    for idx, player in enumerate(players):
         hints_processed.append(PlayerHints(
             player_num=tracker["aliases"][idx]["player"],
             slot_name=player["name"],
@@ -404,7 +404,7 @@ def main():
         hints_processed.append(PlayerHints(
             player_num=item_link["slot"],
             slot_name=item_link["name"],
-            game=hints_processed[item_link["members"][0]-1].game,
+            game=hints_processed[item_link["members"][0]].game,
             alias=None,
             has_goaled=False,
             hints_to_find=[],
