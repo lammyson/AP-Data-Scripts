@@ -367,6 +367,9 @@ class GetRoomData():
                             client=client,
                             semaphore=sem))
 
+        # Remove old files from previous iterations of this script
+        Path(f"{output_folder}/last_fetched.json").unlink(missing_ok=True)
+
         last_fetched_json = {"last_fetched": datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")}
         with open(f"{output_folder}/last_fetched.json", "w") as f:
             json.dump(last_fetched_json, f)
