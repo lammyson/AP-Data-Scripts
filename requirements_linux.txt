@@ -13,5 +13,4 @@
 beautifulsoup4>=4.15.0
 httpx>=0.28.1
 pygraphviz>=2.0.4
-pyvips[binary]>=3.2.0
 tabulate>=0.10.0

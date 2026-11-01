@@ -4,7 +4,7 @@ import enum
 import pygraphviz
 import json
 from pathlib import Path
-from pyvips import Image
+from PIL import Image
 from typing import Any, NamedTuple
 import time
 
@@ -549,10 +549,19 @@ def main():
     Path(f"{data_folder}/graphs/dot").mkdir(parents=True, exist_ok=True)
     dot.write(f"{data_folder}/graphs/dot/{output_filename}.dot")
 
+    # TODO - Configure png to save it smaller
     start_time = time.perf_counter()
     if output_format == "avif":
         dot.draw(path=f"{data_folder}/graphs/{output_filename}.jpg", format="jpg", prog=output_engine)
-        Image.new_from_file(f"{data_folder}/graphs/{output_filename}.jpg").write_to_file(f"{data_folder}/graphs/{output_filename}.avif")
+        # TODO - Configure some stuff to make the output file size smaller
+        with Image.open(f"{data_folder}/graphs/{output_filename}.jpg") as image:
+            image.save(f"{data_folder}/graphs/{output_filename}.avif")
+                # Q=50,
+                # bitdepth=12,
+                # lossless=False,
+                # compression=ForeignHeifCompression.AV1,
+                # effort=4,
+                # subsample_mode=ForeignSubsample.ON)
     else:
         dot.draw(path=f"{data_folder}/graphs/{output_filename}.{output_format}", format=output_format, prog=output_engine)
     end_time = time.perf_counter()
