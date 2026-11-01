@@ -6,6 +6,7 @@ import sys
 from tabulate import tabulate, SEPARATING_LINE
 from typing import Any, NamedTuple
 import warnings
+from zipfile import ZipFile
 import zlib
 
 
@@ -84,13 +85,13 @@ class DetailedSphereCsv(NamedTuple):
 
 # Parse arguments
 parser = argparse.ArgumentParser(
-    description="Parse server .archipelago file")
+    description="Parse server .archipelago file or .zip file from a generation")
 parser.add_argument(
     "-f", "--input-file",
     required=True,
     type=Path,
     metavar="FILE",
-    help="(Required) .archipelago file")
+    help="(Required) .archipelago file or .zip file from a generation")
 
 parser.add_argument(
     "-d", "--debug",
@@ -228,12 +229,31 @@ output_detailed_inventory: bool = output_inventory_csv or output_inventory_table
 output_spheres: bool = output_spheres_summary_csv or output_spheres_detailed_csv or \
                        output_spheres_summary_table or output_spheres_detailed_table
 
-# TODO - add some basic file validation
+# Validate the input file
 file: Path = args.input_file
-with open(file, 'rb') as f:
-    raw_data = f.read()
-print(f"Using file={file}")
-print()
+if not file.exists():
+    raise FileNotFoundError(f"file={file} does not exist")
+if not file.is_file():
+    raise OSError(f"file={file} is not a file")
+if not (file.name.lower().endswith(".archipelago") or file.name.lower().endswith(".zip")):
+    parser.error(f"file={file} must be a .zip or .archipelago file")
+
+if file.name.lower().endswith(".archipelago"):
+    with open(file, 'rb') as f:
+        raw_data = f.read()
+    print(f"Loaded file={file}")
+    print()
+elif file.name.lower().endswith(".zip"):
+    with ZipFile(file) as f:
+        for file_in_zip in f.namelist():
+            if file_in_zip.endswith(".archipelago"):
+                raw_data = f.read(file_in_zip)
+                print(f"Loaded file={file_in_zip} inside archive={file}")
+                print()
+                break
+        else:
+            raise FileNotFoundError(f"*.archipelago file could not be found in file={file}")
+
 
 # Load the .archipelago file
 with warnings.catch_warnings():
