@@ -262,7 +262,7 @@ with warnings.catch_warnings():
     script_dir = Path(__file__).resolve().parent
     sys.path.append(f"{script_dir}/Archipelago")
     from Archipelago import Utils
-    from Archipelago.NetUtils import Hint, MultiData
+    from Archipelago.NetUtils import Hint, MultiData, SlotType
 
     format_version = raw_data[0]
     if format_version > 3:
@@ -320,17 +320,18 @@ if output_summary:
     table_headers = ["Id", "Name", "Game", "Locations", "Priority Locations", "Priority %", "Start Hints - Finder", "Start Hints - Receiver", "Start Inventory"]
     table_data: list = []
     for slot_id, player in multidata["slot_info"].items():
-        table_data.append(SummaryTableRow(
-            id=slot_id,
-            name=player.name,
-            game=player.game,
-            locations=num_locations_per_player[slot_id],
-            num_priority_locations=num_priority_locations_per_player[slot_id],
-            num_priority_locations_percent=f"{num_priority_locations_per_player[slot_id] / num_locations_per_player[slot_id] * 100:>7.3f} %",
-            num_hints_finder=num_start_hints_finder[slot_id],
-            num_hints_receiver=num_start_hints_receiver[slot_id],
-            num_start_inventory=num_start_inventory_per_player[slot_id]
-        ))
+        if player.type == SlotType.player:
+            table_data.append(SummaryTableRow(
+                id=slot_id,
+                name=player.name,
+                game=player.game,
+                locations=num_locations_per_player[slot_id],
+                num_priority_locations=num_priority_locations_per_player[slot_id],
+                num_priority_locations_percent=f"{num_priority_locations_per_player[slot_id] / num_locations_per_player[slot_id] * 100:>7.3f} %",
+                num_hints_finder=num_start_hints_finder[slot_id],
+                num_hints_receiver=num_start_hints_receiver[slot_id],
+                num_start_inventory=num_start_inventory_per_player[slot_id]
+            ))
 
     if output_summary_csv:
         output_file: Path = Path(f"{file.parent}/{file.stem}_summary.csv")
