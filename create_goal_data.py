@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from get_room_data import SlotMapping
+
 
 @dataclass
 class GoalData():
@@ -172,8 +174,8 @@ def main():
         parser.error(f"Data folder={args.data_folder} is not a directory")
 
     data_folder: str = args.data_folder
-    with open(f"{data_folder}/players.json", "r") as f:
-        players: list[dict[str, str]] = json.load(f)
+    with open(f"{data_folder}/slot_mapping.json", "r") as f:
+        slot_mapping: list[SlotMapping] = [SlotMapping(*item) for item in json.load(f)]
     with open(f"{data_folder}/slot_data_tracker.json", "r") as f:
         slot_data: list[dict[str, Any]] = json.load(f)
 
@@ -182,8 +184,8 @@ def main():
     for slot in slot_data:
         goal: GoalData = GoalData()
         goal.player_id = slot["player"]
-        goal.player = players[slot["player"]-1]["name"]
-        goal.game = players[slot["player"]-1]["game"]
+        goal.player = slot_mapping[slot["player"]-1].name
+        goal.game = slot_mapping[slot["player"]-1].game
 
         match goal.game:
             case "Pokemon Crystal":

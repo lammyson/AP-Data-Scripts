@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 import time
 
-from get_room_data import get_file_safe_name
+from get_room_data import get_file_safe_name, SlotMapping
 
 # TODO - Make this into a library
 # - Function that processes the raw hints into hints_processed.json
@@ -15,7 +15,6 @@ from get_room_data import get_file_safe_name
 # So then we can make a python script that does
 # - Process hints into hints_processed.json once
 # - Call the hint graph creation function multiple times with different args depending on what we want
-
 
 # https://github.com/ArchipelagoMW/Archipelago/blob/main/docs/network%20protocol.md#hintstatus
 class HintStatus(enum.IntEnum):
@@ -223,8 +222,8 @@ def main():
     data_folder: str = args.data_folder
     with open(f"{data_folder}/last_fetched.json", "r") as f:
         last_fetched = json.load(f)
-    with open(f"{data_folder}/players.json", "r") as f:
-        players: list[dict[str, str]] = json.load(f)
+    with open(f"{data_folder}/slot_mapping.json", "r") as f:
+        slot_mapping: list[SlotMapping] = [SlotMapping(*item) for item in json.load(f)]
     with open(f"{data_folder}/tracker.json", "r") as f:
         tracker = json.load(f)
     with open(f"{data_folder}/static_tracker.json", "r") as f:
@@ -248,7 +247,7 @@ def main():
     # TODO - support item_links
     hint_chain_slot_name: str | None = args.hint_chain_slot
     if hint_chain_slot_name:
-        matches = [[idx, player] for idx, player in enumerate(players) if player["name"] == hint_chain_slot_name]
+        matches = [[idx, player] for idx, player in enumerate(slot_mapping) if player.name == hint_chain_slot_name]
 
         if len(matches) == 0:
             parser.error(f"Error parsing --hint-chain-slot. "
@@ -274,7 +273,7 @@ def main():
     highlight_slots: list[str] = args.highlight_slots
     if highlight_slots:
         for slot in highlight_slots:
-            matches = [[idx, player] for idx, player in enumerate(players) if player["name"] == slot]
+            matches = [[idx, player] for idx, player in enumerate(slot_mapping) if player.name == slot]
 
             if len(matches) == 0:
                 parser.error(f"Error parsing --highlight-slots. "
@@ -323,7 +322,7 @@ def main():
     # Validation done. Tell the user what type of hint graph will be created
     action_string: str = "Creating hint"
     if depth_option_provided:
-        action_string += f" chain for slot {players[hint_chain_slot_id-1]["name"]} showing"
+        action_string += f" chain for slot {slot_mapping[hint_chain_slot_id-1].name} showing"
         if show_parent_nodes and show_child_nodes:
             action_string += f" parent nodes at depth {parent_depth} and child nodes at depth {child_depth}"
         elif show_parent_nodes:
@@ -385,34 +384,33 @@ def main():
     ))
 
     # Add the normal slots
-    for idx, player in enumerate(players):
-        hints_processed.append(PlayerHints(
-            player_num=tracker["aliases"][idx]["player"],
-            slot_name=player["name"],
-            game=player["game"],
-            alias=tracker["aliases"][idx]["alias"],
-            has_goaled=tracker["player_status"][idx]["status"] == 30,
-            hints_to_find=[],
-            hints_for_others=[],
-            has_hint=False,
-            is_item_link=False,
-            node_name=set_node_name(slot_name=player["name"], alias=tracker["aliases"][idx]["alias"], is_item_link=False)
-        ))
-
-    # Add item_links slots
-    for item_link in static_tracker["groups"]:
-        hints_processed.append(PlayerHints(
-            player_num=item_link["slot"],
-            slot_name=item_link["name"],
-            game=hints_processed[item_link["members"][0]].game,
-            alias=None,
-            has_goaled=False,
-            hints_to_find=[],
-            hints_for_others=[],
-            has_hint=False,
-            is_item_link=True,
-            node_name=set_node_name(slot_name=item_link["name"], alias=None, is_item_link=True)
-        ))
+    for idx, player in enumerate(slot_mapping):
+        if not player.is_item_link:
+            hints_processed.append(PlayerHints(
+                player_num=tracker["aliases"][idx]["player"],
+                slot_name=player.name,
+                game=player.game,
+                alias=tracker["aliases"][idx]["alias"],
+                has_goaled=tracker["player_status"][idx]["status"] == 30,
+                hints_to_find=[],
+                hints_for_others=[],
+                has_hint=False,
+                is_item_link=False,
+                node_name=set_node_name(slot_name=player.name, alias=tracker["aliases"][idx]["alias"], is_item_link=False)
+            ))
+        else:
+            hints_processed.append(PlayerHints(
+                player_num=player.id,
+                slot_name=player.name,
+                game=player.game,
+                alias=None,
+                has_goaled=False,
+                hints_to_find=[],
+                hints_for_others=[],
+                has_hint=False,
+                is_item_link=True,
+                node_name=set_node_name(slot_name=player.name, alias=None, is_item_link=True)
+            ))
 
     if debug:
         with open(f"{data_folder}/make-hint-graph-debug/hints_processed_pre.json", "w") as f:

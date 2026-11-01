@@ -5,8 +5,15 @@ import httpx
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 import warnings
+
+
+class SlotMapping(NamedTuple):
+    id: int  # 1-based id, same as how Archipelago does it
+    name: str
+    game: str
+    is_item_link: bool
 
 
 def get_file_safe_name(name: str) -> str:
@@ -112,18 +119,27 @@ class GetRoomData():
 
         return checks_table
 
-    def _room_status_to_players_json(self, room_status: dict[str, Any]):
-        players = [
-            {
-                "name": player_data[0],
-                "game": player_data[1]
-            }
-            for player_data in room_status["players"]
-        ]
-        file = f"{self._output_folder}/players.json"
+    def _room_status_to_slot_mapping_json(self, room_status: dict[str, Any], static_tracker: dict[str, Any]):
+        players: list[SlotMapping] = []
+        for idx, player_data in enumerate(room_status["players"]):
+            players.append(SlotMapping(
+                id=idx+1,
+                name=player_data[0],
+                game=player_data[1],
+                is_item_link=False
+            ))
+        for group in static_tracker["groups"]:
+            players.append(SlotMapping(
+                id=group["slot"],
+                name=group["name"],
+                game=players[group["members"][0]-1].game,
+                is_item_link=True
+            ))
+
+        file = f"{self._output_folder}/slot_mapping.json"
         with open(file, "w") as f:
             json.dump(players, f)
-            print(f"Wrote players/games to {file}")
+            print(f"Wrote slots/games to {file}")
 
     def _get_slot_name_from_name_with_alias(self, slot_name: str, alias: str | None):
         if alias is not None:
@@ -132,18 +148,27 @@ class GetRoomData():
                 slot_name = slot_name.replace(alias_string, "")[1:-1]
         return slot_name
 
-    def _checks_table_to_players_json(self, checks_table: list[dict[str, Any]], aliases: list[dict[str, Any]]):
-        players = [
-            {
-                "name": self._get_slot_name_from_name_with_alias(slot_name=row["Name"], alias=aliases[idx]["alias"]),
-                "game": row["Game"]
-            }
-            for idx, row in enumerate(checks_table)
-        ]
-        file = f"{self._output_folder}/players.json"
+    def _checks_table_to_slot_mapping_json(self, checks_table: list[dict[str, Any]], aliases: list[dict[str, Any]], static_tracker: dict[str, Any]):
+        players: list[SlotMapping] = []
+        for idx, row in enumerate(checks_table):
+            players.append(SlotMapping(
+                id=idx+1,
+                name=self._get_slot_name_from_name_with_alias(slot_name=row["Name"], alias=aliases[idx]["alias"]),
+                game=row["Game"],
+                is_item_link=False
+            ))
+        for group in static_tracker["groups"]:
+            players.append(SlotMapping(
+                id=group["slot"],
+                name=group["name"],
+                game=players[group["members"][0]-1].game,
+                is_item_link=True
+            ))
+
+        file = f"{self._output_folder}/slot_mapping.json"
         with open(file, "w") as f:
             json.dump(players, f)
-            print(f"Wrote players/games to {file}")
+            print(f"Wrote slots/games to {file}")
 
     def _load_suuids(self) -> dict[str, str]:
         if self._suuids:
@@ -251,6 +276,7 @@ class GetRoomData():
 
         sem = asyncio.Semaphore(4)
         async with httpx.AsyncClient(timeout=60) as client:
+            room_status: dict[str, Any] | None = None
             checks_table: list[dict[str, Any]] | None = None
             if room_suuid:
                 # /room_status/<suuid:room_id>
@@ -263,7 +289,6 @@ class GetRoomData():
                     semaphore=sem)
                 tracker_suuid = room_status["tracker"]
                 self._verify_tracker_suuid(tracker_suuid)
-                self._room_status_to_players_json(room_status=room_status)
             else:
                 tracker_html = await self._download_from_html_to_file(
                     endpoint=f"tracker/{tracker_suuid}",
@@ -314,6 +339,16 @@ class GetRoomData():
             tracker = tracker_task.result()
             static_tracker = static_tracker_task.result()
 
+            if room_status is not None:
+                self._room_status_to_slot_mapping_json(
+                    room_status=room_status,
+                    static_tracker=static_tracker)
+            if checks_table is not None:
+                self._checks_table_to_slot_mapping_json(
+                    checks_table=checks_table,
+                    aliases=tracker["aliases"],
+                    static_tracker=static_tracker)
+
             async with asyncio.TaskGroup() as tg:
                 for game, data in static_tracker["datapackage"].items():
                     safe_game_name: str = get_file_safe_name(game)
@@ -331,11 +366,6 @@ class GetRoomData():
                             file=datapackage_file,
                             client=client,
                             semaphore=sem))
-
-        if checks_table is not None:
-            self._checks_table_to_players_json(
-                checks_table=checks_table,
-                aliases=tracker["aliases"])
 
         last_fetched_json = {"last_fetched": datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")}
         with open(f"{output_folder}/last_fetched.json", "w") as f:
