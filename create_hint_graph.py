@@ -4,6 +4,7 @@ import enum
 import pygraphviz
 import json
 from pathlib import Path
+from pyvips import Image
 from typing import Any, NamedTuple
 import time
 
@@ -146,7 +147,7 @@ def main():
     output_group.add_argument(
         "--output-format",
         default="svg",
-        choices=["svg", "jpg", "png"],
+        choices=["svg", "jpg", "png", "avif"],
         help="Output file format. Default is svg")
     output_group.add_argument(
         "--output-engine",
@@ -549,7 +550,11 @@ def main():
     dot.write(f"{data_folder}/graphs/dot/{output_filename}.dot")
 
     start_time = time.perf_counter()
-    dot.draw(path=f"{data_folder}/graphs/{output_filename}.{output_format}", format=output_format, prog=output_engine)
+    if output_format == "avif":
+        dot.draw(path=f"{data_folder}/graphs/{output_filename}.jpg", format="jpg", prog=output_engine)
+        Image.new_from_file(f"{data_folder}/graphs/{output_filename}.jpg").write_to_file(f"{data_folder}/graphs/{output_filename}.avif")
+    else:
+        dot.draw(path=f"{data_folder}/graphs/{output_filename}.{output_format}", format=output_format, prog=output_engine)
     end_time = time.perf_counter()
 
     execution_time = end_time - start_time
