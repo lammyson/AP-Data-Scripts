@@ -485,6 +485,14 @@ if output_spheres:
                     location = [k for k, v in finding_datapackage.items() if v == location_id]
                     item = [k for k, v in receiving_datapackage.items() if v == item_id]
 
+                    if len(item) == 0:
+                        print(f"Unable to find item={item_id} for game {receiving_slot.game} for player {receiving_slot.name} with id={receiving_player_id}")
+                        item.append("Unknown item")
+
+                    if len(location) == 0:
+                        print(f"Unable to find location={location_id} for game {finding_slot.game} for player {finding_slot.name} with id={player_id}")
+                        location.append("Unknown location")
+
                     sphere_table.append(DetailedSphereCsv(
                         id=sphere_id+1,
                         finding_player=finding_slot.name,
