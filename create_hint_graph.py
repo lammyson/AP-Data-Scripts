@@ -243,11 +243,11 @@ def main():
     # Validate slot id if it was provided
     hint_chain_slot_id: int = -1
 
+    # TODO - Refactor all the slot name checks into a function
     # Validate slot name if it was provided
-    # TODO - support item_links
     hint_chain_slot_name: str | None = args.hint_chain_slot
     if hint_chain_slot_name:
-        matches = [[idx, player] for idx, player in enumerate(slot_mapping) if player.name == hint_chain_slot_name]
+        matches = [player for player in slot_mapping if player.name == hint_chain_slot_name]
 
         if len(matches) == 0:
             parser.error(f"Error parsing --hint-chain-slot. "
@@ -257,23 +257,23 @@ def main():
             error_json = []
             for match in matches:
                 error_json.append({
-                    "alias": tracker["aliases"][match[0]+1]["alias"],
-                    "player": match[0]+1,
-                    "slot_name": match[1][0]
+                    "alias": tracker["aliases"][match.id-1]["alias"],
+                    "player": match.id,
+                    "slot_name": match.name
                 })
             parser.error(f"Error parsing --hint-chain-slot. "
                          f"slot_name={hint_chain_slot_name} found multiple times. "
                          "This should never happen. "
                          f"Run get-room-info.py to pull fresh data\n\t{error_json}")
 
-        hint_chain_slot_id = matches[0][0]+1
+        hint_chain_slot_id = matches[0].id
 
     # Validate slot names to highlight exist
     slot_ids_to_highlight: list[int] = []
     highlight_slots: list[str] = args.highlight_slots
     if highlight_slots:
         for slot in highlight_slots:
-            matches = [[idx, player] for idx, player in enumerate(slot_mapping) if player.name == slot]
+            matches = [player for player in slot_mapping if player.name == slot]
 
             if len(matches) == 0:
                 parser.error(f"Error parsing --highlight-slots. "
@@ -283,16 +283,16 @@ def main():
                 error_json = []
                 for match in matches:
                     error_json.append({
-                        "alias": tracker["aliases"][match[0]+1]["alias"],
-                        "player": match[0]+1,
-                        "slot_name": match[1][0]
+                        "alias": tracker["aliases"][match.id-1]["alias"],
+                        "player": match.id,
+                        "slot_name": match.name
                     })
                 parser.error(f"Error parsing --highlight-slots. "
                              f"slot_name={slot} found multiple times. "
                              "This should never happen. "
                              f"Run get-room-info.py to pull fresh data\n\t{error_json}")
 
-            slot_ids_to_highlight.append(matches[0][0]+1)
+            slot_ids_to_highlight.append(matches[0].id)
 
     # Create output filename
     fetch_time: str = last_fetched["last_fetched"]
@@ -416,6 +416,8 @@ def main():
         with open(f"{data_folder}/make-hint-graph-debug/hints_processed_pre.json", "w") as f:
             json.dump([asdict(hint) for hint in hints_processed], f, indent=3)
 
+    # TODO - When processing item_links, connect them to the slots they represent
+    # - item_link slot will be finder, slots in the group will be the receiver
     # Add hints to hints_processed
     for hint in hints_raw_unique:
         # Skip hints that were found
