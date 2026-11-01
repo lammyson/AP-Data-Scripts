@@ -10,9 +10,6 @@ from zipfile import ZipFile
 import zlib
 
 
-# TODO - Add item_link support
-
-
 def convert_sets_to_lists(obj: dict | list | set) -> dict[Any, Any] | list[Any]:
     """Recursively converts sets to lists inside a dict or list"""
     if isinstance(obj, dict):
@@ -70,8 +67,6 @@ class InventoryCsv(NamedTuple):
     item_amount: int
 
 
-# TODO - Should finding/receiving games be added?
-# ["Sphere Id", "Finding Player", "Receiving Player", "Location", "Item", "Classification"]
 class DetailedSphereCsv(NamedTuple):
     """For printing sphere info to a CSV file"""
     id: int
@@ -328,6 +323,18 @@ if output_summary:
                 locations=num_locations_per_player[slot_id],
                 num_priority_locations=num_priority_locations_per_player[slot_id],
                 num_priority_locations_percent=f"{num_priority_locations_per_player[slot_id] / num_locations_per_player[slot_id] * 100:>7.3f} %",
+                num_hints_finder=num_start_hints_finder[slot_id],
+                num_hints_receiver=num_start_hints_receiver[slot_id],
+                num_start_inventory=num_start_inventory_per_player[slot_id]
+            ))
+        elif player.type == SlotType.group:
+            table_data.append(SummaryTableRow(
+                id=slot_id,
+                name=f"item_link: {player.name}",
+                game=player.game,
+                locations=0,
+                num_priority_locations=0,
+                num_priority_locations_percent="  0.000 %",
                 num_hints_finder=num_start_hints_finder[slot_id],
                 num_hints_receiver=num_start_hints_receiver[slot_id],
                 num_start_inventory=num_start_inventory_per_player[slot_id]
