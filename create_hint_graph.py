@@ -1,6 +1,7 @@
 import argparse
 from dataclasses import asdict, dataclass
 import enum
+import io
 import pygraphviz
 import json
 from pathlib import Path
@@ -545,25 +546,19 @@ def main():
     print(f"Number of hints={num_hints}")
 
     # Save it!
-    print(f"Saving to {data_folder}/graphs/{output_filename}.{output_format}")
+    output_file: str = f"{data_folder}/graphs/{output_filename}.{output_format}"
+    print(f"Saving to {output_file}")
     Path(f"{data_folder}/graphs/dot").mkdir(parents=True, exist_ok=True)
     dot.write(f"{data_folder}/graphs/dot/{output_filename}.dot")
 
-    # TODO - Configure png to save it smaller
     start_time = time.perf_counter()
     if output_format == "avif":
-        dot.draw(path=f"{data_folder}/graphs/{output_filename}.jpg", format="jpg", prog=output_engine)
-        # TODO - Configure some stuff to make the output file size smaller
-        with Image.open(f"{data_folder}/graphs/{output_filename}.jpg") as image:
-            image.save(f"{data_folder}/graphs/{output_filename}.avif")
-                # Q=50,
-                # bitdepth=12,
-                # lossless=False,
-                # compression=ForeignHeifCompression.AV1,
-                # effort=4,
-                # subsample_mode=ForeignSubsample.ON)
+        jpg_data = dot.draw(format="jpg", prog=output_engine)
+        with Image.open(io.BytesIO(jpg_data)) as image:
+            image.save(output_file)
+    # TODO - Configure png to save it smaller
     else:
-        dot.draw(path=f"{data_folder}/graphs/{output_filename}.{output_format}", format=output_format, prog=output_engine)
+        dot.draw(path=output_file, format=output_format, prog=output_engine)
     end_time = time.perf_counter()
 
     execution_time = end_time - start_time
