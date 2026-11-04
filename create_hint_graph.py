@@ -525,13 +525,10 @@ def main():
                          fontcolor="white")
 
     # Add all hints
-    num_hints: int = 0
-    num_players: int = 0
     for index in visited_nodes:
         player = hints_processed[index]
         if player.has_hint:
             dot.add_node(f"{player.player_num}", label=player.node_name)
-            num_players += 1
             for hint in player.hints_to_find:
                 if hint.finding_player in visited_nodes and hint.receiving_player in visited_nodes:
                     label = f"{hint.item_name} at\n{hint.location_name}"
@@ -540,10 +537,17 @@ def main():
                     dot.add_edge(u=f"{hint.finding_player}",
                                  v=f"{hint.receiving_player}",
                                  label=label)
-                    num_hints += 1
 
-    print(f"Number of players={num_players}")
-    print(f"Number of hints={num_hints}")
+    # Add item_link edges to all members in the group
+    for item_link in static_tracker["groups"]:
+        if dot.has_node(item_link["slot"]):
+            for member in item_link["members"]:
+                dot.add_edge(u=f"{item_link["slot"]}",
+                             v=f"{member}",
+                             label=f"item link: {item_link["name"]}")
+
+    print(f"Number of players={dot.number_of_nodes()}")
+    print(f"Number of hints={dot.number_of_edges()}")
 
     # Save it!
     output_file: str = f"{data_folder}/graphs/{output_filename}.{output_format}"
