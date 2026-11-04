@@ -113,30 +113,30 @@ def main():
         action="store_true",
         help="Show goaled slots that have not received their hinted progression items")
 
-    hint_chain_group = parser.add_argument_group("Hint chain options (optional)")
-    hint_chain_group.add_argument(
-        "--hint-chain-slot",
+    hint_subgraph_group = parser.add_argument_group("Hint subgraph options (optional)")
+    hint_subgraph_group.add_argument(
+        "--hint-subgraph-slot",
         metavar="SLOT",
-        help="Slot name of the slot the hint chain will be centered around. "
+        help="Slot name of the slot the hint subgraph will be centered around. "
         "Requires one of the --[child-|parent-]depth options")
-    hint_chain_group.add_argument(
+    hint_subgraph_group.add_argument(
         "--depth",
         metavar="DEPTH",
         type=int,
-        help="Sets how deep in the hint chain to display in both directions. "
-        "Requires the --hint-chain-slot option")
-    hint_chain_group.add_argument(
+        help="Sets how deep in the hint subgraph to display in both directions. "
+        "Requires the --hint-subgraph-slot option")
+    hint_subgraph_group.add_argument(
         "--child-depth",
         metavar="DEPTH",
         type=int,
-        help="Sets how deep in the hint chain to display for slots that depend on you. "
-        "Requires the --hint-chain-slot option. Overrides --depth option")
-    hint_chain_group.add_argument(
+        help="Sets how deep in the hint subgraph to display for slots that depend on you. "
+        "Requires the --hint-subgraph-slot option. Overrides --depth option")
+    hint_subgraph_group.add_argument(
         "--parent-depth",
         metavar="DEPTH",
         type=int,
-        help="Sets how deep in the hint chain to display for slots that you depend on. "
-        "Requires the --hint-chain-slot option. Overrides --depth option")
+        help="Sets how deep in the hint subgraph to display for slots that you depend on. "
+        "Requires the --hint-subgraph-slot option. Overrides --depth option")
 
     output_group = parser.add_argument_group("File output options (optional)")
     output_group.add_argument(
@@ -167,7 +167,7 @@ def main():
         print(f"\tshow-entrances={args.show_entrances}")
         print(f"\tshow-found-hints={args.show_found_hints}")
         print(f"\tshow-goaled-slots={args.show_goaled_slots}")
-        print(f"\thint-chain-slot={args.hint_chain_slot}")
+        print(f"\thint-subgraph-slot={args.hint_subgraph_slot}")
         print(f"\tdepth={args.depth}")
         print(f"\tchild-depth={args.child_depth}")
         print(f"\tparent-depth={args.parent_depth}")
@@ -205,18 +205,18 @@ def main():
         child_depth = args.child_depth
 
     depth_option_provided: bool = args.depth is not None or args.parent_depth is not None or args.child_depth is not None
-    hint_chain_slot_provided: bool = args.hint_chain_slot is not None
-    if depth_option_provided and not hint_chain_slot_provided:
-        parser.error("The --hint-chain-slot argument is required when using --depth|--child-depth|--parent-depth")
-    if hint_chain_slot_provided and not depth_option_provided:
+    hint_subgraph_slot_provided: bool = args.hint_subgraph_slot is not None
+    if depth_option_provided and not hint_subgraph_slot_provided:
+        parser.error("The --hint-subgraph-slot argument is required when using --depth|--child-depth|--parent-depth")
+    if hint_subgraph_slot_provided and not depth_option_provided:
         parser.error("At least one of the --depth|--child-depth|--parent-depth arguments are required "
-                     "when using --hint-chain-slot")
+                     "when using --hint-subgraph-slot")
 
     # TODO - Filter out nodes with >= some number of hints to find - Make this configurable
     # - Kinda broken. It filters out players that have high numbers of hints to find
     #   but when players that have hints to receive are looking for the slots that
     #   are sending them hints, these big slots get pulled in
-    # - hint-chain-slot and depth options do a good job of reducing the noise of big
+    # - hint-subgraph-slot and depth options do a good job of reducing the noise of big
     #   slots so maybe just use that instead
     high_hint_count: int = 2147483647
 
@@ -243,17 +243,17 @@ def main():
             exit(1)
 
     # Validate slot id if it was provided
-    hint_chain_slot_id: int = -1
+    hint_subgraph_slot_id: int = -1
 
     # TODO - Refactor all the slot name checks into a function
     # Validate slot name if it was provided
-    hint_chain_slot_name: str | None = args.hint_chain_slot
-    if hint_chain_slot_name:
-        matches = [player for player in slot_mapping if player.name == hint_chain_slot_name]
+    hint_subgraph_slot_name: str | None = args.hint_subgraph_slot
+    if hint_subgraph_slot_name:
+        matches = [player for player in slot_mapping if player.name == hint_subgraph_slot_name]
 
         if len(matches) == 0:
-            parser.error(f"Error parsing --hint-chain-slot. "
-                         f"slot_name={hint_chain_slot_name} not found. "
+            parser.error(f"Error parsing --hint-subgraph-slot. "
+                         f"slot_name={hint_subgraph_slot_name} not found. "
                          "Please check your spelling")
         elif len(matches) >= 2:
             error_json = []
@@ -263,12 +263,12 @@ def main():
                     "player": match.id,
                     "slot_name": match.name
                 })
-            parser.error(f"Error parsing --hint-chain-slot. "
-                         f"slot_name={hint_chain_slot_name} found multiple times. "
+            parser.error(f"Error parsing --hint-subgraph-slot. "
+                         f"slot_name={hint_subgraph_slot_name} found multiple times. "
                          "This should never happen. "
                          f"Run get-room-info.py to pull fresh data\n\t{error_json}")
 
-        hint_chain_slot_id = matches[0].id
+        hint_subgraph_slot_id = matches[0].id
 
     # Validate slot names to highlight exist
     slot_ids_to_highlight: list[int] = []
@@ -309,7 +309,7 @@ def main():
         print(f"\tshow_entrances={show_entrances}")
         print(f"\tshow_found_hints={show_found_hints}")
         print(f"\tshow_goaled_slots={show_goaled_slots}")
-        print(f"\thint_chain_slot={hint_chain_slot_name}")
+        print(f"\thint_subgraph_slot={hint_subgraph_slot_name}")
         print(f"\tshow_parent_nodes={show_parent_nodes}")
         print(f"\tparent_depth={parent_depth}")
         print(f"\tshow_child_nodes={show_child_nodes}")
@@ -324,7 +324,7 @@ def main():
     # Validation done. Tell the user what type of hint graph will be created
     action_string: str = "Creating hint"
     if depth_option_provided:
-        action_string += f" chain for slot {slot_mapping[hint_chain_slot_id-1].name} showing"
+        action_string += f" subgraph for slot {slot_mapping[hint_subgraph_slot_id-1].name} showing"
         if show_parent_nodes and show_child_nodes:
             action_string += f" parent nodes at depth {parent_depth} and child nodes at depth {child_depth}"
         elif show_parent_nodes:
@@ -470,15 +470,15 @@ def main():
     # Create list of nodes to show
     visited_nodes: set[int] = set()
 
-    # Show all nodes if we're not looking for a specific chain. Also remove the special Archipelago server slot 0 from the list
+    # Show all nodes if we're not looking for a specific subgraph. Also remove the special Archipelago server slot 0 from the list
     if not show_child_nodes and not show_parent_nodes:
         visited_nodes.update([node.player_num for node in hints_processed if node.player_num != 0])
 
     # Show nodes that depend on us
     if show_child_nodes:
-        nodes_to_visit: list[PlayerHints] = [hints_processed[hint_chain_slot_id]]
+        nodes_to_visit: list[PlayerHints] = [hints_processed[hint_subgraph_slot_id]]
         nodes_next_loop: list[PlayerHints] = []
-        visited_nodes_child: set = set([hints_processed[hint_chain_slot_id].player_num])
+        visited_nodes_child: set = set([hints_processed[hint_subgraph_slot_id].player_num])
         while child_depth > 0:
             while nodes_to_visit:
                 current_node = nodes_to_visit.pop()
@@ -494,9 +494,9 @@ def main():
 
     # Show nodes that we depend on
     if show_parent_nodes:
-        nodes_to_visit: list[PlayerHints] = [hints_processed[hint_chain_slot_id]]
+        nodes_to_visit: list[PlayerHints] = [hints_processed[hint_subgraph_slot_id]]
         nodes_next_loop: list[PlayerHints] = []
-        visited_nodes_parent: set = set([hints_processed[hint_chain_slot_id].player_num])
+        visited_nodes_parent: set = set([hints_processed[hint_subgraph_slot_id].player_num])
         while parent_depth > 0:
             while nodes_to_visit:
                 current_node = nodes_to_visit.pop()
@@ -544,7 +544,7 @@ def main():
             for member in item_link["members"]:
                 dot.add_edge(u=f"{item_link["slot"]}",
                              v=f"{member}",
-                             label=f"item link: {item_link["name"]}")
+                             label=f"{item_link["name"]} item_link")
 
     print(f"Number of players={dot.number_of_nodes()}")
     print(f"Number of hints={dot.number_of_edges()}")
