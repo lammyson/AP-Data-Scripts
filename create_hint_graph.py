@@ -322,7 +322,7 @@ def main():
         Path(f"{data_folder}/make-hint-graph-debug").mkdir(parents=True, exist_ok=True)
 
     # Validation done. Tell the user what type of hint graph will be created
-    action_string: str = "Creating hint"
+    action_string: str = "Creating progression hint"
     if depth_option_provided:
         action_string += f" subgraph for slot {slot_mapping[hint_subgraph_slot_id-1].name} showing"
         if show_parent_nodes and show_child_nodes:
@@ -345,7 +345,7 @@ def main():
         action_string += "\n- And showing found hints"
 
     if show_goaled_slots:
-        action_string += "\n- And showing goaled slots that have not received their hinted progression items"
+        action_string += "\n- And showing goaled slots"
 
     print(action_string)
 
