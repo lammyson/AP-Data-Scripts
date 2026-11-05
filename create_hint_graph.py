@@ -574,7 +574,7 @@ def main():
     elif hint_mode is HintMode.HINT_CHAIN_MODE:
         # TODO - Can we add a way to only show edges coming out of the slot we wanna look at instead of a full subgraph? Prob a config option
         print()
-        print("Making hint chain! - only supports --hint-chain-start-slot and --hint-chain-direction=children for now")
+        print("Making hint chain! - only supports --hint-chain-start-slot and --hint-chain-direction=[children|parents] for now")
         print(f"- hint_chain_start_slot = {args.hint_chain_start_slot}")
         print(f"- hint_chain_direction = {args.hint_chain_direction}")
         print()
@@ -640,13 +640,19 @@ def main():
                     hints_to_search = player.hints_to_find
 
                 for hint in hints_to_search:
-                    if hint.finding_player == hint_chain_start_slot_id and hint.receiving_player in visited_nodes:
+                    add_hint: bool = False
+                    if args.hint_chain_direction == "children":
+                        add_hint = hint.finding_player == hint_chain_start_slot_id and hint.receiving_player in visited_nodes
+                    elif args.hint_chain_direction == "parents":
+                        add_hint = hint.receiving_player == hint_chain_start_slot_id and hint.finding_player in visited_nodes
+
+                    if add_hint:
                         label = f"{hint.item_name} at\n{hint.location_name}"
                         if hint.entrance and show_entrances:
                             label = f"{label}\n({hint.entrance})"
                         dot.add_edge(u=f"{hint.finding_player}",
-                                    v=f"{hint.receiving_player}",
-                                    label=label)
+                                     v=f"{hint.receiving_player}",
+                                     label=label)
 
         # print(f"\t\thint-chain-start-slot={args.hint_chain_start_slot}")
         # print(f"\t\thint-chain-direction={args.hint_chain_direction}")
