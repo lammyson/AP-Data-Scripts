@@ -73,6 +73,9 @@ class PlayerHints:
 
 def get_slot_ids_from_names(slot_names: list[str], slot_mapping: list[SlotMapping]) -> list[int]:
     """Get list of 1-based slot ids from a list of slot names"""
+    if slot_names is None or slot_mapping is None:
+        return []
+
     slot_ids: list[int] = []
     for slot_name in slot_names:
         matches = [player for player in slot_mapping if player.name == slot_name]
@@ -452,6 +455,7 @@ def main():
         if not show_found_hints and hint.found:
             continue
 
+        # TODO - Eventually make this configurable
         # Skip non-progression hints
         if hint.item_flags & 0x1 != 1:
             continue
@@ -550,20 +554,104 @@ def main():
                          style="filled",
                          fontcolor="white")
 
-    # TODO - Merge multiple hints to the same slot into a single edge? (should speed things up)
-    # Show the full graph/subgraph for all the nodes selected
-    for index in visited_nodes:
-        player = hints_processed[index]
-        if player.has_hint:
-            dot.add_node(f"{player.player_num}", label=player.node_name)
-            for hint in player.hints_to_find:
-                if hint.finding_player in visited_nodes and hint.receiving_player in visited_nodes:
-                    label = f"{hint.item_name} at\n{hint.location_name}"
-                    if hint.entrance and show_entrances:
-                        label = f"{label}\n({hint.entrance})"
-                    dot.add_edge(u=f"{hint.finding_player}",
-                                v=f"{hint.receiving_player}",
-                                label=label)
+    if hint_mode is HintMode.HINT_GRAPH_MODE or hint_mode is HintMode.HINT_SUBGRAPH_MODE:
+        # TODO - Merge multiple hints to the same slot into a single edge? (should speed things up)
+        # Show the full graph/subgraph for all the nodes selected
+        for index in visited_nodes:
+            player = hints_processed[index]
+            if player.has_hint:
+                dot.add_node(f"{player.player_num}", label=player.node_name)
+                for hint in player.hints_to_find:
+                    if hint.finding_player in visited_nodes and hint.receiving_player in visited_nodes:
+                        label = f"{hint.item_name} at\n{hint.location_name}"
+                        if hint.entrance and show_entrances:
+                            label = f"{label}\n({hint.entrance})"
+                        dot.add_edge(u=f"{hint.finding_player}",
+                                    v=f"{hint.receiving_player}",
+                                    label=label)
+
+    # Hint chains!
+    elif hint_mode is HintMode.HINT_CHAIN_MODE:
+        # TODO - Can we add a way to only show edges coming out of the slot we wanna look at instead of a full subgraph? Prob a config option
+        print()
+        print("Making hint chain! - only supports --hint-chain-start-slot and --hint-chain-direction=children for now")
+        print(f"- hint_chain_start_slot = {args.hint_chain_start_slot}")
+        print(f"- hint_chain_direction = {args.hint_chain_direction}")
+        print()
+
+        hint_chain_start_slot_id: int = get_slot_ids_from_names([args.hint_chain_start_slot], slot_mapping)[0]
+        hint_chain_parent_slot_ids: list[int] = get_slot_ids_from_names(args.hint_chain_parent_slots, slot_mapping)
+        hint_chain_child_slot_ids: list[int] = get_slot_ids_from_names(args.hint_chain_child_slots, slot_mapping)
+
+        dot.add_node(f"{hints_processed[hint_chain_start_slot_id].player_num}",
+                     label=hints_processed[hint_chain_start_slot_id].node_name)
+
+        visited_nodes: set[int] = set()
+        if args.hint_chain_direction == "parents":
+            parent_depth = 1 # TODO - This has to come from somewhere?
+            nodes_to_visit: list[PlayerHints] = [hints_processed[hint_chain_start_slot_id]]
+            nodes_next_loop: list[PlayerHints] = []
+            visited_nodes_parent: set[int] = set([hints_processed[hint_chain_start_slot_id].player_num])
+            while parent_depth > 0:
+                while nodes_to_visit:
+                    current_node = nodes_to_visit.pop()
+                    for hint in current_node.hints_for_others:
+                        if hint.finding_player not in visited_nodes_parent:
+                            visited_nodes_parent.add(hint.finding_player)
+                            nodes_next_loop.append(hints_processed[hint.finding_player])
+
+                # Reset for the next depth
+                nodes_to_visit = nodes_next_loop
+                nodes_next_loop = []
+                parent_depth -= 1
+            visited_nodes.update(visited_nodes_parent)
+
+        if args.hint_chain_direction == "children":
+            child_depth = 1 # TODO - This has to come from somewhere?
+            nodes_to_visit: list[PlayerHints] = [hints_processed[hint_chain_start_slot_id]]
+            nodes_next_loop: list[PlayerHints] = []
+            visited_nodes_child: set[int] = set([hints_processed[hint_chain_start_slot_id].player_num])
+            while child_depth > 0:
+                while nodes_to_visit:
+                    current_node = nodes_to_visit.pop()
+                    for hint in current_node.hints_to_find:
+                        if hint.receiving_player not in visited_nodes_child:
+                            visited_nodes_child.add(hint.receiving_player)
+                            nodes_next_loop.append(hints_processed[hint.receiving_player])
+                # Reset for the next depth
+                nodes_to_visit = nodes_next_loop
+                nodes_next_loop = []
+                child_depth -= 1
+            visited_nodes.update(visited_nodes_child)
+
+        # TODO - Need to verify if self hints work
+
+        # Need to have a base node and then look for hints to the nodes that we want to connect to
+        # This probably needs to be done iteratively as we're discovering the hint chain
+        for index in visited_nodes:
+            player = hints_processed[index]
+            if player.has_hint:
+                dot.add_node(f"{player.player_num}", label=player.node_name)
+
+                hints_to_search: list[HintProcessed] = []
+                if args.hint_chain_direction == "children":
+                    hints_to_search = player.hints_for_others
+                elif args.hint_chain_direction == "parents":
+                    hints_to_search = player.hints_to_find
+
+                for hint in hints_to_search:
+                    if hint.finding_player == hint_chain_start_slot_id and hint.receiving_player in visited_nodes:
+                        label = f"{hint.item_name} at\n{hint.location_name}"
+                        if hint.entrance and show_entrances:
+                            label = f"{label}\n({hint.entrance})"
+                        dot.add_edge(u=f"{hint.finding_player}",
+                                    v=f"{hint.receiving_player}",
+                                    label=label)
+
+        # print(f"\t\thint-chain-start-slot={args.hint_chain_start_slot}")
+        # print(f"\t\thint-chain-direction={args.hint_chain_direction}")
+        # print(f"\t\thint-chain-parent-slots={args.hint_chain_parent_slots}")
+        # print(f"\t\thint-chain-child-slots={args.hint_chain_child_slots}")
 
     # Add item_link edges to all members in the group
     for item_link in static_tracker["groups"]:
@@ -571,25 +659,8 @@ def main():
             for member in item_link["members"]:
                 if dot.has_node(member):
                     dot.add_edge(u=f"{item_link["slot"]}",
-                                v=f"{member}",
-                                label=f"{item_link["name"]} item_link")
-
-    # TODO - Other possibility is creating the entire graph, then use dot.subgraph or other functions to pull out just the information you want
-    # dot.in_neighbors() and dot.out_neighbors() are good candidates for this
-    # in_neighbors: list[pygraphviz.Node] = dot.in_neighbors(1)
-    # in_neighbors[0].
-    if hint_mode is HintMode.HINT_CHAIN_MODE:
-        # TODO - Can we add a way to only show edges coming out of the slot we wanna look at instead of a full subgraph? Prob a config option
-        print()
-        print("Making hint chain!")
-
-        # print(f"\t\thint-chain-start-slot={args.hint_chain_start_slot}")
-        # print(f"\t\thint-chain-direction={args.hint_chain_direction}")
-        # print(f"\t\thint-chain-parent-slots={args.hint_chain_parent_slots}")
-        # print(f"\t\thint-chain-child-slots={args.hint_chain_child_slots}")
-        # dot.edge
-
-        print()
+                                 v=f"{member}",
+                                 label=f"{item_link["name"]} item_link")
 
     print(f"Number of players={dot.number_of_nodes()}")
     print(f"Number of hints={dot.number_of_edges()}")
