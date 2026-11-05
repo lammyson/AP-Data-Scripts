@@ -18,6 +18,12 @@ from get_room_data import get_file_safe_name, SlotMapping
 # - Process hints into hints_processed.json once
 # - Call the hint graph creation function multiple times with different args depending on what we want
 
+class HintMode(enum.IntEnum):
+    HINT_GRAPH_MODE = 0     # Show the full hint graph
+    HINT_SUBGRAPH_MODE = 1  # Show a subgraph from the full hint graph
+    HINT_CHAIN_MODE = 2     # Show a smaller set of a subgraph with only certain directions displayed
+
+
 # https://github.com/ArchipelagoMW/Archipelago/blob/main/docs/network%20protocol.md#hintstatus
 class HintStatus(enum.IntEnum):
     HINT_UNSPECIFIED = 0   # The receiving player has not specified any status
@@ -91,7 +97,7 @@ def main():
         "-d", "--debug",
         default=False,
         action="store_true",
-        help="Print debug statements and files")
+        help=argparse.SUPPRESS)
     parser.add_argument(
         "-hs", "--highlight-slots",
         nargs="*",
@@ -111,9 +117,12 @@ def main():
         "--show-goaled-slots",
         default=False,
         action="store_true",
-        help="Show goaled slots that have not received their hinted progression items")
+        help="Show goaled slots")
 
-    hint_subgraph_group = parser.add_argument_group("Hint subgraph options (optional)")
+    # TODO - Rename parents/children to finder/receiver?
+    # Formal term is predecessor/successor
+
+    hint_subgraph_group = parser.add_argument_group("Hint subgraph options. Shows all hints between all players in the subgraph (optional)")
     hint_subgraph_group.add_argument(
         "--hint-subgraph-slot",
         metavar="SLOT",
@@ -137,6 +146,26 @@ def main():
         type=int,
         help="Sets how deep in the hint subgraph to display for slots that you depend on. "
         "Requires the --hint-subgraph-slot option. Overrides --depth option")
+
+    # TODO - Figure out arguments
+    # TODO - Make hint chain and hint subgraph args mutually exclusive
+    # TODO - 
+    hint_chain_group = parser.add_argument_group("Hint chain options. Shows hints in a single direction for all selected players (optional)")
+    hint_chain_group.add_argument(
+        "--hint-chain-slots",
+        nargs="*",
+        metavar="SLOT",
+        help=argparse.SUPPRESS) # "List of slots to display and their hints between them")
+    hint_chain_group.add_argument(
+        "--hint-chain-edge-slots",
+        nargs="*",
+        metavar="SLOT",
+        help=argparse.SUPPRESS) # "List of slots to display their receiving hints. Depth is set to 1")
+    hint_chain_group.add_argument(
+        "--hint-chain-direction",
+        default="parents",
+        choices=["parents", "children", "both"], # TODO - Maybe need to drop the both option
+        help=argparse.SUPPRESS) # "Only show hints that the --hint-chain-slots need to find")
 
     output_group = parser.add_argument_group("File output options (optional)")
     output_group.add_argument(
@@ -162,18 +191,21 @@ def main():
 
     if debug:
         print("Just after argument parsing")
-        print(f"\tdata-folder={args.data_folder}")
-        print(f"\thighlight-slots={args.highlight_slots}")
-        print(f"\tshow-entrances={args.show_entrances}")
-        print(f"\tshow-found-hints={args.show_found_hints}")
-        print(f"\tshow-goaled-slots={args.show_goaled_slots}")
-        print(f"\thint-subgraph-slot={args.hint_subgraph_slot}")
-        print(f"\tdepth={args.depth}")
-        print(f"\tchild-depth={args.child_depth}")
-        print(f"\tparent-depth={args.parent_depth}")
-        print(f"\toutput-filename={args.output_filename}")
-        print(f"\toutput-format={args.output_format}")
-        print(f"\toutput-engine={args.output_engine}")
+        print("\tGeneral options:")
+        print(f"\t\tdata-folder={args.data_folder}")
+        print(f"\t\thighlight-slots={args.highlight_slots}")
+        print(f"\t\tshow-entrances={args.show_entrances}")
+        print(f"\t\tshow-found-hints={args.show_found_hints}")
+        print(f"\t\tshow-goaled-slots={args.show_goaled_slots}")
+        print("\tHint subgraph options:")
+        print(f"\t\thint-subgraph-slot={args.hint_subgraph_slot}")
+        print(f"\t\tdepth={args.depth}")
+        print(f"\t\tchild-depth={args.child_depth}")
+        print(f"\t\tparent-depth={args.parent_depth}")
+        print("\tOutput options:")
+        print(f"\t\toutput-filename={args.output_filename}")
+        print(f"\t\toutput-format={args.output_format}")
+        print(f"\t\toutput-engine={args.output_engine}")
         print("")
 
     show_entrances: bool = args.show_entrances
@@ -206,11 +238,22 @@ def main():
 
     depth_option_provided: bool = args.depth is not None or args.parent_depth is not None or args.child_depth is not None
     hint_subgraph_slot_provided: bool = args.hint_subgraph_slot is not None
+    hint_subgraph_enabled: bool = depth_option_provided and hint_subgraph_slot_provided
     if depth_option_provided and not hint_subgraph_slot_provided:
         parser.error("The --hint-subgraph-slot argument is required when using --depth|--child-depth|--parent-depth")
     if hint_subgraph_slot_provided and not depth_option_provided:
         parser.error("At least one of the --depth|--child-depth|--parent-depth arguments are required "
                      "when using --hint-subgraph-slot")
+
+    hint_chain_enabled: bool = args.hint_chain_slots is not None and args.hint_chain_edge_slots is not None
+    if hint_chain_enabled and hint_subgraph_enabled:
+        parser.error("hint chain options and hint subgraph options were both enabled but only one can be enabled at a time. Only provide options for one or the other or none at all")
+
+    hint_mode: HintMode = HintMode.HINT_GRAPH_MODE
+    if hint_subgraph_enabled:
+        hint_mode = HintMode.HINT_SUBGRAPH_MODE
+    elif hint_chain_enabled:
+        hint_mode = HintMode.HINT_CHAIN_MODE
 
     # TODO - Filter out nodes with >= some number of hints to find - Make this configurable
     # - Kinda broken. It filters out players that have high numbers of hints to find
@@ -478,7 +521,7 @@ def main():
     if show_child_nodes:
         nodes_to_visit: list[PlayerHints] = [hints_processed[hint_subgraph_slot_id]]
         nodes_next_loop: list[PlayerHints] = []
-        visited_nodes_child: set = set([hints_processed[hint_subgraph_slot_id].player_num])
+        visited_nodes_child: set[int] = set([hints_processed[hint_subgraph_slot_id].player_num])
         while child_depth > 0:
             while nodes_to_visit:
                 current_node = nodes_to_visit.pop()
@@ -496,7 +539,7 @@ def main():
     if show_parent_nodes:
         nodes_to_visit: list[PlayerHints] = [hints_processed[hint_subgraph_slot_id]]
         nodes_next_loop: list[PlayerHints] = []
-        visited_nodes_parent: set = set([hints_processed[hint_subgraph_slot_id].player_num])
+        visited_nodes_parent: set[int] = set([hints_processed[hint_subgraph_slot_id].player_num])
         while parent_depth > 0:
             while nodes_to_visit:
                 current_node = nodes_to_visit.pop()
@@ -512,7 +555,7 @@ def main():
         visited_nodes.update(visited_nodes_parent)
 
     # Create the graph
-    dot = pygraphviz.AGraph(directed=True, rankdir='LR')
+    dot = pygraphviz.AGraph(directed=True, rankdir='LR', strict=False)
 
     # Highlight nodes if they are called out even if they won't connect to the graph with current settings
     if slot_ids_to_highlight:
@@ -524,27 +567,44 @@ def main():
                          style="filled",
                          fontcolor="white")
 
+    # TODO - Merge multiple hints to the same slot into a single edge? (should speed things up)
     # Add all hints
-    for index in visited_nodes:
-        player = hints_processed[index]
-        if player.has_hint:
-            dot.add_node(f"{player.player_num}", label=player.node_name)
-            for hint in player.hints_to_find:
-                if hint.finding_player in visited_nodes and hint.receiving_player in visited_nodes:
-                    label = f"{hint.item_name} at\n{hint.location_name}"
-                    if hint.entrance and show_entrances:
-                        label = f"{label}\n({hint.entrance})"
-                    dot.add_edge(u=f"{hint.finding_player}",
-                                 v=f"{hint.receiving_player}",
-                                 label=label)
+    if hint_mode is HintMode.HINT_SUBGRAPH_MODE or hint_mode is HintMode.HINT_SUBGRAPH_MODE:
+        # Show the full graph/subgraph for all the nodes selected
+        for index in visited_nodes:
+            player = hints_processed[index]
+            if player.has_hint:
+                dot.add_node(f"{player.player_num}", label=player.node_name)
+                for hint in player.hints_to_find:
+                    if hint.finding_player in visited_nodes and hint.receiving_player in visited_nodes:
+                        label = f"{hint.item_name} at\n{hint.location_name}"
+                        if hint.entrance and show_entrances:
+                            label = f"{label}\n({hint.entrance})"
+                        dot.add_edge(u=f"{hint.finding_player}",
+                                    v=f"{hint.receiving_player}",
+                                    label=label)
+    elif hint_mode is HintMode.HINT_CHAIN_MODE:
+        # TODO - Can we add a way to only show edges coming out of the slot we wanna look at instead of a full subgraph? Prob a config option
+        # args.show_children_only
+        # args.show_parents_only
+        # Show just a single direction
+        pass
+    else:
+        raise RuntimeError("Unsupported hint_mode={hint_mode}. This is a bug!")
 
     # Add item_link edges to all members in the group
     for item_link in static_tracker["groups"]:
         if dot.has_node(item_link["slot"]):
             for member in item_link["members"]:
-                dot.add_edge(u=f"{item_link["slot"]}",
-                             v=f"{member}",
-                             label=f"{item_link["name"]} item_link")
+                if dot.has_node(member):
+                    dot.add_edge(u=f"{item_link["slot"]}",
+                                v=f"{member}",
+                                label=f"{item_link["name"]} item_link")
+
+    # TODO - Other possibility is creating the entire graph, then use dot.subgraph or other functions to pull out just the information you want
+    # dot.in_neighbors() and dot.out_neighbors() are good candidates for this
+    # in_neighbors: list[pygraphviz.Node] = dot.in_neighbors(1)
+    # in_neighbors[0].
 
     print(f"Number of players={dot.number_of_nodes()}")
     print(f"Number of hints={dot.number_of_edges()}")
@@ -557,12 +617,12 @@ def main():
 
     start_time = time.perf_counter()
     if output_format == "avif":
-        jpg_data = dot.draw(format="jpg", prog=output_engine)
+        jpg_data = dot.draw(format="jpg", prog=output_engine, args="-v")
         with Image.open(io.BytesIO(jpg_data)) as image:
             image.save(output_file)
     # TODO - Configure png to save it smaller
     else:
-        dot.draw(path=output_file, format=output_format, prog=output_engine)
+        dot.draw(path=output_file, format=output_format, prog=output_engine, args="-v")
     end_time = time.perf_counter()
 
     execution_time = end_time - start_time
