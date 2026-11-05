@@ -329,7 +329,7 @@ def main():
     fetch_time: str = last_fetched["last_fetched"]
     output_filename: Path = Path(f"{fetch_time}")
     if args.output_filename is not None:
-        output_filename = Path(f"{output_filename}_{args.output_filename}")
+        output_filename = Path(get_file_safe_name(f"{output_filename}_{args.output_filename}"))
 
     if debug:
         print("Just after argument validation")
