@@ -10,22 +10,87 @@ import warnings
 
 
 class SlotMapping(NamedTuple):
-    id: int  # 1-based id, same as how Archipelago does it
+    id: int  # 1-based id
     name: str
     game: str
-    is_item_link: bool
+    item_link_members: list[int]
 
 
 def get_file_safe_name(name: str) -> str:
     return "".join(c for c in name if c not in '<>:"/\\|?*')
 
 
-class GetRoomData():
+class RoomData():
+    data_last_fetched: dict[str, str] = {}             # Required
+    room_datapackages: dict[str, dict[str, Any]] = {}  # Required
+    room_status: dict[str, Any] = {}                   # Optional
+    slot_data_tracker: dict[str, Any] = {}             # Optional
+    slot_mapping: list[SlotMapping] = []               # Required
+    static_tracker: dict[str, Any] = {}                # Required
+    tracker: dict[str, Any] = {}                       # Required
+
     _room_suuid: str | None = None
     _tracker_suuid: str | None = None
     _output_folder: Path
     _debug = False
     _suuids: dict[str, str] = {}
+
+    def get_data_last_fetched(self):
+        return self.data_last_fetched
+    def get_room_datapackages(self):
+        return self.room_datapackages
+    def get_room_status(self):
+        return self.room_status
+    def get_slot_data_tracker(self):
+        return self.slot_data_tracker
+    def get_slot_mapping(self):
+        return self.slot_mapping
+    def get_static_tracker(self):
+        return self.static_tracker
+    def get_tracker(self):
+        return self.tracker
+
+    def load_room_data(self, room_data_folder: str | Path):
+        """Load room data from the room data folder"""
+
+        if not Path(room_data_folder).is_dir():
+            raise NotADirectoryError(f"{room_data_folder} is not a valid directory")
+        self._output_folder = Path(room_data_folder)
+
+        # Try loading the optional files
+        if Path(f"{self._output_folder}/room_status.json").is_file():
+            with open(f"{self._output_folder}/room_status.json", "r") as f:
+                self.room_status = json.load(f)
+        else:
+            warnings.warn(f"Unable to load optional file {self._output_folder}/room_status.json")
+
+        if Path(f"{self._output_folder}/slot_data_tracker.json").is_file():
+            with open(f"{self._output_folder}/slot_data_tracker.json", "r") as f:
+                self.slot_data_tracker = json.load(f)
+        else:
+            warnings.warn(f"Unable to load optional file {self._output_folder}/slot_data_tracker.json")
+
+        # Load the required files
+        with open(f"{self._output_folder}/slot_mapping.json", "r") as f:
+            self.slot_mapping: list[SlotMapping] = [SlotMapping(*item) for item in json.load(f)]
+        with open(f"{self._output_folder}/static_tracker.json", "r") as f:
+            self.static_tracker = json.load(f)
+        with open(f"{self._output_folder}/tracker.json", "r") as f:
+            self.tracker = json.load(f)
+
+        self.room_datapackages: dict[str, dict[str, Any]] = dict()
+        for game, data in self.static_tracker["datapackage"].items():
+            safe_game_name: str = get_file_safe_name(game)
+            checksum: str = data["checksum"]
+            datapackage_file = f".datapackages/{safe_game_name}/{checksum}.json"
+            if Path(datapackage_file).is_file():
+                with open(datapackage_file) as f:
+                    self.room_datapackages.update({game: json.load(f)})
+            else:
+                raise FileNotFoundError(f"{datapackage_file} is required but does not exist. Run get_room_data.py first")
+
+        with open(f"{self._output_folder}/data_last_fetched.json", "r") as f:
+            self.data_last_fetched = json.load(f)
 
     async def _download_from_endpoint_to_file(
             self,
@@ -126,14 +191,14 @@ class GetRoomData():
                 id=idx+1,
                 name=player_data[0],
                 game=player_data[1],
-                is_item_link=False
+                item_link_members=[]
             ))
         for group in static_tracker["groups"]:
             players.append(SlotMapping(
                 id=group["slot"],
                 name=group["name"],
                 game=players[group["members"][0]-1].game,
-                is_item_link=True
+                item_link_members=group["members"]
             ))
 
         file = f"{self._output_folder}/slot_mapping.json"
@@ -155,14 +220,14 @@ class GetRoomData():
                 id=idx+1,
                 name=self._get_slot_name_from_name_with_alias(slot_name=row["Name"], alias=aliases[idx]["alias"]),
                 game=row["Game"],
-                is_item_link=False
+                item_link_members=[]
             ))
         for group in static_tracker["groups"]:
             players.append(SlotMapping(
                 id=group["slot"],
                 name=group["name"],
                 game=players[group["members"][0]-1].game,
-                is_item_link=True
+                item_link_members=group["members"]
             ))
 
         file = f"{self._output_folder}/slot_mapping.json"
@@ -256,11 +321,11 @@ class GetRoomData():
 
         # Verify the time the data was last fetched so that we don't request data too quickly
         cache_timeout_s = 1800
-        if Path(f"{output_folder}/last_fetched.json").is_file():
-            with open(f"{output_folder}/last_fetched.json", "r") as f:
-                last_fetched = json.load(f)
-            if "last_fetched" in last_fetched:
-                old_time = datetime.strptime(last_fetched["last_fetched"], "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
+        if Path(f"{output_folder}/data_last_fetched.json").is_file():
+            with open(f"{output_folder}/data_last_fetched.json", "r") as f:
+                data_last_fetched = json.load(f)
+            if "data_last_fetched" in data_last_fetched:
+                old_time = datetime.strptime(data_last_fetched["data_last_fetched"], "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
                 if (now_time - old_time).seconds <= cache_timeout_s:
                     print(f"Data was last downloaded {(now_time - old_time).seconds} seconds ago "
                           f"which is less than the {cache_timeout_s} second ({cache_timeout_s/60:g} minute) cache timer. "
@@ -369,11 +434,12 @@ class GetRoomData():
 
         # Remove old files from previous iterations of this script
         Path(f"{output_folder}/players.json").unlink(missing_ok=True)
+        Path(f"{output_folder}/last_fetched.json").unlink(missing_ok=True)
 
-        last_fetched_json = {"last_fetched": datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")}
-        with open(f"{output_folder}/last_fetched.json", "w") as f:
-            json.dump(last_fetched_json, f)
-            print(f"Wrote last_fetched to {output_folder}/last_fetched.json")
+        data_last_fetched_json = {"data_last_fetched": datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")}
+        with open(f"{output_folder}/data_last_fetched.json", "w") as f:
+            json.dump(data_last_fetched_json, f)
+            print(f"Wrote data_last_fetched to {output_folder}/data_last_fetched.json")
 
     async def _main(self):
         self._parse_arguments()
@@ -385,4 +451,4 @@ class GetRoomData():
 
 
 if __name__ == "__main__":
-    asyncio.run(GetRoomData()._main())
+    asyncio.run(RoomData()._main())

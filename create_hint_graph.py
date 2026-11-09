@@ -9,7 +9,7 @@ from PIL import Image
 from typing import Any, NamedTuple
 import time
 
-from get_room_data import get_file_safe_name, SlotMapping
+from get_room_data import get_file_safe_name, RoomData, SlotMapping
 
 # TODO - Make this into a library
 # - Function that processes the raw hints into hints_processed.json
@@ -49,11 +49,12 @@ class HintProcessed(NamedTuple):
     """Internal hint type to make creating the hint graph easier"""
     finding_player: int
     receiving_player: int
-    location_id: int
-    location_name: str  # Save the location_id lookup
-    item_id: int
-    item_name: str  # Save the item_id lookup
+    location_name: str
+    item_name: str
+    found: bool
     entrance: str
+    item_flags: int
+    status: HintStatus
 
 
 @dataclass
@@ -167,6 +168,7 @@ def main():
         type=int,
         help="Sets how deep in the hint subgraph to display for slots that you depend on. "
         "Requires the --hint-subgraph-slot option. Overrides --depth option")
+    # TODO - Provide an option for the hint subgraph to show in edges, out edges or both?
 
     # TODO - Figure out arguments - maybe split args if you want both 
     hint_chain_group = parser.add_argument_group("Hint chain options. Shows hints in a single direction for all selected players (optional)")
@@ -179,6 +181,10 @@ def main():
         default="parents",
         choices=["parents", "children", "both"], # TODO - Maybe need to drop the both option
         help=argparse.SUPPRESS) # "Only show hints that the --hint-chain-slots need to find")
+
+    # TODO - There could be loops, so probably prefer a path or something
+    # - For the path, require it to be in the correct order, otherwise it will fail
+    # TODO - Is it feasible to have multiple hint chains in the same graph?
     hint_chain_group.add_argument(
         "--hint-chain-parent-slots",
         nargs="*",
@@ -293,25 +299,13 @@ def main():
 
     # Load required data from cached API data
     data_folder: str = args.data_folder
-    with open(f"{data_folder}/last_fetched.json", "r") as f:
-        last_fetched = json.load(f)
-    with open(f"{data_folder}/slot_mapping.json", "r") as f:
-        slot_mapping: list[SlotMapping] = [SlotMapping(*item) for item in json.load(f)]
-    with open(f"{data_folder}/tracker.json", "r") as f:
-        tracker = json.load(f)
-    with open(f"{data_folder}/static_tracker.json", "r") as f:
-        static_tracker = json.load(f)
-    room_datapackages: dict[str, dict[str, Any]] = dict()
-    for game, data in static_tracker["datapackage"].items():
-        safe_game_name: str = get_file_safe_name(game)
-        checksum: str = data["checksum"]
-        datapackage_file = f".datapackages/{safe_game_name}/{checksum}.json"
-        if Path(datapackage_file).is_file():
-            with open(datapackage_file) as f:
-                room_datapackages.update({game: json.load(f)})
-        else:
-            print(f"{datapackage_file} is required but does not exist. Run get_room_data.py first")
-            exit(1)
+    room_data: RoomData = RoomData()
+    room_data.load_room_data(data_folder)
+    data_last_fetched = room_data.get_data_last_fetched()
+    slot_mapping = room_data.get_slot_mapping()
+    tracker = room_data.get_tracker()
+    static_tracker = room_data.get_static_tracker()
+    room_datapackages = room_data.get_room_datapackages()
 
     # Validate slot id if it was provided
     hint_subgraph_slot_id: int = -1
@@ -326,7 +320,7 @@ def main():
     slot_ids_to_highlight: list[int] = get_slot_ids_from_names(highlight_slots, slot_mapping)
 
     # Create output filename
-    fetch_time: str = last_fetched["last_fetched"]
+    fetch_time: str = data_last_fetched["data_last_fetched"]
     output_filename: Path = Path(f"{fetch_time}")
     if args.output_filename is not None:
         output_filename = Path(get_file_safe_name(f"{output_filename}_{args.output_filename}"))
@@ -416,7 +410,7 @@ def main():
 
     # Add the normal slots
     for idx, player in enumerate(slot_mapping):
-        if not player.is_item_link:
+        if len(player.item_link_members) == 0:
             hints_processed.append(PlayerHints(
                 player_num=tracker["aliases"][idx]["player"],
                 slot_name=player.name,
@@ -476,26 +470,31 @@ def main():
         hints_processed[hint.finding_player].hints_to_find.append(HintProcessed(
             finding_player=hint.finding_player,
             receiving_player=hint.receiving_player,
-            location_id=hint.location,
             location_name=location[0],
-            item_id=hint.item,
             item_name=item[0],
-            entrance=hint.entrance
+            found=hint.found,
+            entrance=hint.entrance,
+            item_flags=hint.item_flags,
+            status=hint.status
         ))
         hints_processed[hint.receiving_player].hints_for_others.append(HintProcessed(
             finding_player=hint.finding_player,
             receiving_player=hint.receiving_player,
-            location_id=hint.location,
             location_name=location[0],
-            item_id=hint.item,
             item_name=item[0],
-            entrance=hint.entrance
+            found=hint.found,
+            entrance=hint.entrance,
+            item_flags=hint.item_flags,
+            status=hint.status
         ))
         hints_processed[hint.receiving_player].has_hint = True
         hints_processed[hint.finding_player].has_hint = True
-    if debug:
-        with open(f"{data_folder}/make-hint-graph-debug/hints_processed.json", "w") as f:
+
+    with open(f"{data_folder}/hints_processed.json", "w") as f:
+        if debug:
             json.dump([asdict(hint) for hint in hints_processed], f, indent=3)
+        else:
+            json.dump([asdict(hint) for hint in hints_processed], f)
 
     # Create list of nodes to show
     visited_nodes: set[int] = set()
