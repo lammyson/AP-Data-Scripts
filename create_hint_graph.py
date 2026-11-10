@@ -20,11 +20,6 @@ from get_room_data import get_file_safe_name, RoomData, SlotMapping
 # - Process hints into hints_processed.json once
 # - Call the hint graph creation function multiple times with different args depending on what we want
 
-class HintMode(enum.IntEnum):
-    HINT_GRAPH_MODE = 0     # Show the full hint graph
-    HINT_SUBGRAPH_MODE = 1  # Show a subgraph from the full hint graph
-    HINT_CHAIN_MODE = 2     # Show a smaller set of a subgraph with only certain directions displayed
-
 
 # https://github.com/ArchipelagoMW/Archipelago/blob/main/docs/network%20protocol.md#hintstatus
 class HintStatus(enum.IntEnum):
@@ -73,6 +68,13 @@ class PlayerHints:
     hints_to_find: list[HintProcessed]
     hints_to_receive: list[HintProcessed]
 
+
+class HintMode(enum.IntEnum):
+    HINT_GRAPH_MODE = 0     # Show the full hint graph
+    HINT_SUBGRAPH_MODE = 1  # Show a subgraph from the full hint graph
+    HINT_CHAIN_MODE = 2     # Show a smaller set of a subgraph with only certain directions displayed
+
+
 def _add_hint(dot: pygraphviz.AGraph, hint: HintProcessed, merge_hints: bool, show_entrances: bool):
     """Add a hint to the given graph"""
     if merge_hints:
@@ -85,25 +87,34 @@ def _add_hint(dot: pygraphviz.AGraph, hint: HintProcessed, merge_hints: bool, sh
 
     if merge_hints and dot.has_edge(hint.finding_player, hint.receiving_player):
         edge = dot.get_edge(hint.finding_player, hint.receiving_player)
-        edge.attr['label'] = f"{label}\n{edge.attr['label']}"
+        edge.attr['label'] = f"{label}\n{edge.attr['label']}" # pyright: ignore[reportAttributeAccessIssue]
     else:
         dot.add_edge(u=hint.finding_player, v=hint.receiving_player, label=label)
 
-class HintChain(NamedTuple):
-    class Direction(enum.StrEnum):
-        FINDER = "finder"      # Same as child direction
-        RECEIVER = "receiver"  # Same as parent direction
+def _save_graph(dot: pygraphviz.AGraph, data_folder: str, output_filename: str, output_format: str, output_engine: str):
+    print(f"Number of players={dot.number_of_nodes()}")
+    print(f"Number of hints={dot.number_of_edges()}")
 
-    name: str
-    hint_chain: list[str]
-    direction: HintChain.Direction
-    search_last_slot: bool
+    # Save it!
+    output_file: str = f"{data_folder}/graphs/{output_filename}.{output_format}"
+    print(f"Saving to {output_file}")
+    Path(f"{data_folder}/graphs/dot").mkdir(parents=True, exist_ok=True)
+    dot.write(f"{data_folder}/graphs/dot/{output_filename}.dot")
 
-    # TODO - Raise a RuntimeError or something if this fails to validate. Look into schema validation
-    @staticmethod
-    def validate_hint_chain_yaml(hint_chain_data):
-        pass
+    start_time = time.perf_counter()
+    if output_format == "avif":
+        jpg_data = dot.draw(format="jpg", prog=output_engine, args="-v")
+        if jpg_data is None:
+            raise RuntimeError("Unable to convert to an intermediate jpg when creating the avif file")
+        with Image.open(io.BytesIO(jpg_data)) as image:
+            image.save(output_file)
+    # TODO - Configure png to save it smaller
+    else:
+        dot.draw(path=output_file, format=output_format, prog=output_engine, args="-v")
+    end_time = time.perf_counter()
 
+    execution_time = end_time - start_time
+    print(f"Hint graph creation took {execution_time:.6f} seconds to run")
 
 def get_slot_ids_from_names(slot_names: list[str], slot_mapping: list[SlotMapping]) -> list[int]:
     """Get list of 1-based slot ids from a list of slot names"""
@@ -134,6 +145,22 @@ def set_node_name(slot_name: str, alias: str | None, is_item_link: bool) -> str:
     else:
         node_name = f"{slot_name}"
     return node_name
+
+
+class HintChain(NamedTuple):
+    class Direction(enum.StrEnum):
+        FINDER = "finder"      # Same as child direction
+        RECEIVER = "receiver"  # Same as parent direction
+
+    name: str
+    hint_chain: list[str]
+    direction: Direction
+    search_last_slot: bool
+
+    # TODO - Raise a RuntimeError or something if this fails to validate. Look into schema validation
+    @staticmethod
+    def validate_hint_chain_yaml(hint_chain_data):
+        pass
 
 
 def main():
@@ -219,7 +246,7 @@ def main():
     output_group.add_argument(
         "-o", "--output-filename",
         metavar="FILE",
-        help="Partial output filename for the graph. "
+        help="Partial output filename for the graph. Only valid for non-hint chain graphs. "
         "Data fetch date and extension are appended. "
         "Example: <output-filename>_<fetch-date>.svg")
     output_group.add_argument(
@@ -251,6 +278,7 @@ def main():
         print(f"\t\tshow-entrances={args.show_entrances}")
         print(f"\t\tshow-found-hints={args.show_found_hints}")
         print(f"\t\tshow-goaled-slots={args.show_goaled_slots}")
+        print(f"\t\tno-merge-hints={args.no_merge_hints}")
         print("\tHint subgraph options:")
         print(f"\t\thint-subgraph-slot={args.hint_subgraph_slot}")
         print(f"\t\tdepth={args.depth}")
@@ -344,9 +372,9 @@ def main():
 
     # Create output filename
     fetch_time: str = data_last_fetched["data_last_fetched"]
-    output_filename: Path = Path(f"{fetch_time}")
+    output_filename: str = fetch_time
     if args.output_filename is not None:
-        output_filename = Path(get_file_safe_name(f"{output_filename}_{args.output_filename}"))
+        output_filename = get_file_safe_name(f"{output_filename}_{args.output_filename}")
 
     if debug:
         print("Just after argument validation")
@@ -368,17 +396,21 @@ def main():
         Path(f"{data_folder}/make-hint-graph-debug").mkdir(parents=True, exist_ok=True)
 
     # Validation done. Tell the user what type of hint graph will be created
-    action_string: str = "Creating progression hint"
-    if depth_option_provided:
-        action_string += f" subgraph for slot {slot_mapping[hint_subgraph_slot_id-1].name} showing"
-        if show_parent_nodes and show_child_nodes:
-            action_string += f" parent nodes at depth {parent_depth} and child nodes at depth {child_depth}"
-        elif show_parent_nodes:
-            action_string += f" parent nodes at depth {parent_depth}"
-        elif show_child_nodes:
-            action_string += f" child nodes at depth {child_depth}"
-    else:
-        action_string += " graph for the entire multiworld"
+    action_string: str = ""
+    if hint_mode == HintMode.HINT_GRAPH_MODE or hint_mode == HintMode.HINT_SUBGRAPH_MODE:
+        action_string += "Creating progression hint"
+        if depth_option_provided:
+            action_string += f" subgraph for slot {slot_mapping[hint_subgraph_slot_id-1].name} showing"
+            if show_parent_nodes and show_child_nodes:
+                action_string += f" parent nodes at depth {parent_depth} and child nodes at depth {child_depth}"
+            elif show_parent_nodes:
+                action_string += f" parent nodes at depth {parent_depth}"
+            elif show_child_nodes:
+                action_string += f" child nodes at depth {child_depth}"
+        else:
+            action_string += " graph for the entire multiworld"
+    elif hint_mode == HintMode.HINT_CHAIN_MODE:
+        action_string += f"Creating hint chain(s) from {args.hint_chain_config}"
     action_string += f" using layout engine {output_engine} and file format {output_format}"
 
     if highlight_slots:
@@ -527,7 +559,6 @@ def main():
     # Highlight nodes if they are called out even if they won't connect to the graph with current settings
     if slot_ids_to_highlight:
         for slot_id in slot_ids_to_highlight:
-            print(f"highlighting slot {hints_processed[slot_id].node_name} ({slot_id})")
             dot.add_node(hints_processed[slot_id].player_num,
                          label=hints_processed[slot_id].node_name,
                          color="darkgreen",
@@ -592,7 +623,6 @@ def main():
     # Hint chains!
     elif hint_mode is HintMode.HINT_CHAIN_MODE:
         print()
-        print("Making hint chain!")
 
         with open(args.hint_chain_config, "r") as f:
             hint_chain_data: dict[str, list] = yaml.safe_load(f)
@@ -606,8 +636,6 @@ def main():
         for chain_config in hint_chain_config["hint_chains"]:
             print(f"Adding hint chain '{chain_config.name}' for slots {chain_config.hint_chain} in direction {chain_config.direction}. search_last_slot={chain_config.search_last_slot}")
             hint_chain_slot_ids: list[int] = get_slot_ids_from_names(chain_config.hint_chain, slot_mapping)
-
-            print(f"\thint_chain_slot_ids={hint_chain_slot_ids}")
 
             # Add all slots to the hint chain
             for slot_id in hint_chain_slot_ids:
@@ -646,6 +674,9 @@ def main():
                     dot.add_node(hint.receiving_player, label=hints_processed[hint.receiving_player].node_name)
                     _add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
 
+        print()
+
+    # TODO - Figure out how this works with hint chains
     # Add item_link edges to all members in the group
     for item_link in static_tracker["groups"]:
         if dot.has_node(item_link["slot"]):
@@ -655,29 +686,7 @@ def main():
                                  v=member,
                                  label=f"{item_link["name"]} item_link")
 
-    print(f"Number of players={dot.number_of_nodes()}")
-    print(f"Number of hints={dot.number_of_edges()}")
-
-    # Save it!
-    output_file: str = f"{data_folder}/graphs/{output_filename}.{output_format}"
-    print(f"Saving to {output_file}")
-    Path(f"{data_folder}/graphs/dot").mkdir(parents=True, exist_ok=True)
-    dot.write(f"{data_folder}/graphs/dot/{output_filename}.dot")
-
-    start_time = time.perf_counter()
-    if output_format == "avif":
-        jpg_data = dot.draw(format="jpg", prog=output_engine, args="-v")
-        if jpg_data is None:
-            raise RuntimeError("Unable to convert to an intermediate jpg when creating the avif file")
-        with Image.open(io.BytesIO(jpg_data)) as image:
-            image.save(output_file)
-    # TODO - Configure png to save it smaller
-    else:
-        dot.draw(path=output_file, format=output_format, prog=output_engine, args="-v")
-    end_time = time.perf_counter()
-
-    execution_time = end_time - start_time
-    print(f"Hint graph creation took {execution_time:.6f} seconds to run")
+    _save_graph(dot, data_folder, output_filename, output_format, output_engine)
 
 
 if __name__ == "__main__":
