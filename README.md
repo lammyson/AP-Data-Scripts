@@ -90,4 +90,5 @@ Parses the `*.archipelago` file that's part of a multiworld generation's output 
 - [beautifulsoup](https://pypi.org/project/beautifulsoup4)
 - [httpx](https://pypi.org/project/httpx)
 - [pygraphviz](https://pypi.org/project/pygraphviz)
+- [pyyaml](https://pypi.org/project/PyYAML)
 - [tabulate](https://pypi.org/project/tabulate)
