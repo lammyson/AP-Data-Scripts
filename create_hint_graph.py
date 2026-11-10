@@ -7,7 +7,7 @@ import pygraphviz
 import json
 from pathlib import Path
 from PIL import Image
-from typing import Any, NamedTuple
+from typing import NamedTuple
 import time
 import yaml
 
@@ -152,10 +152,12 @@ class HintChain(NamedTuple):
         FINDER = "finder"      # Same as child direction
         RECEIVER = "receiver"  # Same as parent direction
 
-    name: str
-    hint_chain: list[str]
-    direction: Direction
-    search_last_slot: bool
+    class SingleChain(NamedTuple):
+        hint_chain: list[str]
+        direction: HintChain.Direction
+        search_last_slot: bool
+
+    hint_chain: dict[str, list[SingleChain]]
 
     # TODO - Raise a RuntimeError or something if this fails to validate. Look into schema validation
     @staticmethod
@@ -180,11 +182,6 @@ def main():
         default=False,
         action="store_true",
         help=argparse.SUPPRESS)
-    parser.add_argument(
-        "-hs", "--highlight-slots",
-        nargs="*",
-        metavar="SLOT",
-        help="List of slot names to highlight in the hint graph")
     parser.add_argument(
         "--show-entrances",
         default=False,
@@ -232,6 +229,11 @@ def main():
         type=int,
         help="Sets how deep in the hint subgraph to display for slots that you depend on. "
         "Requires the --hint-subgraph-slot option. Overrides --depth option")
+    hint_subgraph_group.add_argument(
+        "-hs", "--highlight-slots",
+        nargs="*",
+        metavar="SLOT",
+        help="(Optional) List of slot names to highlight in the hint (sub)graph")
     # TODO - Provide an option for the hint subgraph to show in edges, out edges or both?
 
     # TODO - really make sure documentation is good here and in the example yaml file
@@ -240,7 +242,7 @@ def main():
         "-hcc", "--hint-chain-config",
         type=Path,
         metavar="FILE",
-        help="Hint chain config file. See hint-chain-config-example.yaml for details")
+        help="Hint chain config file. See `examples/hint-chain-config.yaml` for details")
 
     output_group = parser.add_argument_group("File output options (optional)")
     output_group.add_argument(
@@ -274,7 +276,6 @@ def main():
         print("Just after argument parsing")
         print("\tGeneral options:")
         print(f"\t\tdata-folder={args.data_folder}")
-        print(f"\t\thighlight-slots={args.highlight_slots}")
         print(f"\t\tshow-entrances={args.show_entrances}")
         print(f"\t\tshow-found-hints={args.show_found_hints}")
         print(f"\t\tshow-goaled-slots={args.show_goaled_slots}")
@@ -284,6 +285,7 @@ def main():
         print(f"\t\tdepth={args.depth}")
         print(f"\t\tchild-depth={args.child_depth}")
         print(f"\t\tparent-depth={args.parent_depth}")
+        print(f"\t\thighlight-slots={args.highlight_slots}")
         print("\tHint chain options:")
         print(f"\t\thint-chain-config={args.hint_chain_config}")
         print("\tOutput options:")
@@ -409,12 +411,11 @@ def main():
                 action_string += f" child nodes at depth {child_depth}"
         else:
             action_string += " graph for the entire multiworld"
+        if highlight_slots:
+            action_string += f"\n- And highlighting the following slots: {highlight_slots}"
     elif hint_mode == HintMode.HINT_CHAIN_MODE:
         action_string += f"Creating hint chain(s) from {args.hint_chain_config}"
     action_string += f" using layout engine {output_engine} and file format {output_format}"
-
-    if highlight_slots:
-        action_string += f"\n- And highlighting the following slots: {highlight_slots}"
 
     if show_entrances:
         action_string += "\n- And showing entrance information"
@@ -553,20 +554,20 @@ def main():
         else:
             json.dump([asdict(hint) for hint in hints_processed], f)
 
-    # Create the graph
-    dot = pygraphviz.AGraph(directed=True, rankdir=args.graph_rankdir, strict=False)
-
-    # Highlight nodes if they are called out even if they won't connect to the graph with current settings
-    if slot_ids_to_highlight:
-        for slot_id in slot_ids_to_highlight:
-            dot.add_node(hints_processed[slot_id].player_num,
-                         label=hints_processed[slot_id].node_name,
-                         color="darkgreen",
-                         fillcolor="darkgreen",
-                         style="filled",
-                         fontcolor="white")
-
     if hint_mode is HintMode.HINT_GRAPH_MODE or hint_mode is HintMode.HINT_SUBGRAPH_MODE:
+        # Create the graph
+        dot = pygraphviz.AGraph(directed=True, rankdir=args.graph_rankdir, strict=False)
+
+        # Highlight nodes if they are called out even if they won't connect to the graph with current settings
+        if slot_ids_to_highlight:
+            for slot_id in slot_ids_to_highlight:
+                dot.add_node(hints_processed[slot_id].player_num,
+                             label=hints_processed[slot_id].node_name,
+                             color="darkgreen",
+                             fillcolor="darkgreen",
+                             style="filled",
+                             fontcolor="white")
+
         # Create list of nodes to show
         visited_nodes: set[int] = set()
 
@@ -620,74 +621,81 @@ def main():
                     if hint.finding_player in visited_nodes and hint.receiving_player in visited_nodes:
                         _add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
 
+        # TODO - Figure out how this works with hint chains
+        # Add item_link edges to all members in the group
+        for item_link in static_tracker["groups"]:
+            if dot.has_node(item_link["slot"]):
+                for member in item_link["members"]:
+                    if dot.has_node(member):
+                        dot.add_edge(u=item_link["slot"],
+                                    v=member,
+                                    label=f"{item_link["name"]} item_link")
+
+        _save_graph(dot, data_folder, output_filename, output_format, output_engine)
+
     # Hint chains!
     elif hint_mode is HintMode.HINT_CHAIN_MODE:
         print()
 
         with open(args.hint_chain_config, "r") as f:
             hint_chain_data: dict[str, list] = yaml.safe_load(f)
-            HintChain.validate_hint_chain_yaml(hint_chain_data)
 
-        hint_chain_config: dict[str, list[HintChain]] = {
-            key: [HintChain(**datum) for datum in list_data]
-            for key, list_data in hint_chain_data.items()
-        }
+        HintChain.validate_hint_chain_yaml(hint_chain_data)
+        hint_chain_config: HintChain = {
+            hint_chain_name: [HintChain.SingleChain(**datum) for datum in hint_chain_list]
+            for hint_chain_name, hint_chain_list in hint_chain_data.items()
+        } # pyright: ignore[reportAssignmentType]
+        with open("hint-chain-config-debug.json", "w") as f:
+            json.dump(hint_chain_config, f, indent=3)
 
-        for chain_config in hint_chain_config["hint_chains"]:
-            print(f"Adding hint chain '{chain_config.name}' for slots {chain_config.hint_chain} in direction {chain_config.direction}. search_last_slot={chain_config.search_last_slot}")
-            hint_chain_slot_ids: list[int] = get_slot_ids_from_names(chain_config.hint_chain, slot_mapping)
+        for name, config in hint_chain_config.items():
+            dot = pygraphviz.AGraph(directed=True, rankdir=args.graph_rankdir, strict=False)
 
-            # Add all slots to the hint chain
-            for slot_id in hint_chain_slot_ids:
-                dot.add_node(hints_processed[slot_id].player_num,
-                             label=hints_processed[slot_id].node_name)
+            print(f"Creating hint chain {name}")
+            for config in config:
+                print(f"- Adding hint chain for slots {config.hint_chain} in direction {config.direction}. search_last_slot={config.search_last_slot}")
+                hint_chain_slot_ids: list[int] = get_slot_ids_from_names(config.hint_chain, slot_mapping)
 
-            # Find and add hints between each pair of slots
-            for slot1, slot2 in pairwise(hint_chain_slot_ids):
-                head_slot_id: int | None = None
-                tail_slot_id: int | None = None
-                if chain_config.direction == HintChain.Direction.FINDER:
-                    head_slot_id = slot1
-                    tail_slot_id = slot2
-                elif chain_config.direction == HintChain.Direction.RECEIVER:
-                    head_slot_id = slot2
-                    tail_slot_id = slot1
+                # Add all slots to the hint chain
+                for slot_id in hint_chain_slot_ids:
+                    dot.add_node(hints_processed[slot_id].player_num,
+                                label=hints_processed[slot_id].node_name)
 
-                if head_slot_id is None or tail_slot_id is None:
-                    raise RuntimeError("Unable to get slot ids")
+                # Find and add hints between each pair of slots
+                for slot1, slot2 in pairwise(hint_chain_slot_ids):
+                    head_slot_id: int | None = None
+                    tail_slot_id: int | None = None
+                    if config.direction == HintChain.Direction.FINDER:
+                        head_slot_id = slot1
+                        tail_slot_id = slot2
+                    elif config.direction == HintChain.Direction.RECEIVER:
+                        head_slot_id = slot2
+                        tail_slot_id = slot1
 
-                for hint in hints_processed[head_slot_id].hints_to_find:
-                    if hint.finding_player == head_slot_id and hint.receiving_player == tail_slot_id:
+                    if head_slot_id is None or tail_slot_id is None:
+                        raise RuntimeError("Unable to get slot ids")
+
+                    for hint in hints_processed[head_slot_id].hints_to_find:
+                        if hint.finding_player == head_slot_id and hint.receiving_player == tail_slot_id:
+                            _add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
+
+                if config.search_last_slot:
+                    last_slot_id: int = hint_chain_slot_ids[-1]
+
+                    hints_to_search: list[HintProcessed] = []
+                    if config.direction == HintChain.Direction.FINDER:
+                        hints_to_search = hints_processed[last_slot_id].hints_to_find
+                    elif config.direction == HintChain.Direction.RECEIVER:
+                        hints_to_search = hints_processed[last_slot_id].hints_to_receive
+
+                    for hint in hints_to_search:
+                        dot.add_node(hint.finding_player, label=hints_processed[hint.finding_player].node_name)
+                        dot.add_node(hint.receiving_player, label=hints_processed[hint.receiving_player].node_name)
                         _add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
 
-            if chain_config.search_last_slot:
-                last_slot_id: int = hint_chain_slot_ids[-1]
-
-                hints_to_search: list[HintProcessed] = []
-                if chain_config.direction == HintChain.Direction.FINDER:
-                    hints_to_search = hints_processed[last_slot_id].hints_to_find
-                elif chain_config.direction == HintChain.Direction.RECEIVER:
-                    hints_to_search = hints_processed[last_slot_id].hints_to_receive
-
-                for hint in hints_to_search:
-                    dot.add_node(hint.finding_player, label=hints_processed[hint.finding_player].node_name)
-                    dot.add_node(hint.receiving_player, label=hints_processed[hint.receiving_player].node_name)
-                    _add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
-
-        print()
-
-    # TODO - Figure out how this works with hint chains
-    # Add item_link edges to all members in the group
-    for item_link in static_tracker["groups"]:
-        if dot.has_node(item_link["slot"]):
-            for member in item_link["members"]:
-                if dot.has_node(member):
-                    dot.add_edge(u=item_link["slot"],
-                                 v=member,
-                                 label=f"{item_link["name"]} item_link")
-
-    _save_graph(dot, data_folder, output_filename, output_format, output_engine)
-
+            output_filename = f"{fetch_time}_{name}"
+            _save_graph(dot, data_folder, output_filename, output_format, output_engine)
+            print()
 
 if __name__ == "__main__":
     main()
