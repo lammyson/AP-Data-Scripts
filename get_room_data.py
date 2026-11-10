@@ -37,16 +37,22 @@ class RoomData():
 
     def get_data_last_fetched(self):
         return self.data_last_fetched
+
     def get_room_datapackages(self):
         return self.room_datapackages
+
     def get_room_status(self):
         return self.room_status
+
     def get_slot_data_tracker(self):
         return self.slot_data_tracker
+
     def get_slot_mapping(self):
         return self.slot_mapping
+
     def get_static_tracker(self):
         return self.static_tracker
+
     def get_tracker(self):
         return self.tracker
 

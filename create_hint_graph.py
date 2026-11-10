@@ -87,9 +87,10 @@ def _add_hint(dot: pygraphviz.AGraph, hint: HintProcessed, merge_hints: bool, sh
 
     if merge_hints and dot.has_edge(hint.finding_player, hint.receiving_player):
         edge = dot.get_edge(hint.finding_player, hint.receiving_player)
-        edge.attr['label'] = f"{label}\n{edge.attr['label']}" # pyright: ignore[reportAttributeAccessIssue]
+        edge.attr['label'] = f"{label}\n{edge.attr['label']}"  # pyright: ignore[reportAttributeAccessIssue]
     else:
         dot.add_edge(u=hint.finding_player, v=hint.receiving_player, label=label)
+
 
 def _save_graph(dot: pygraphviz.AGraph, data_folder: str, output_filename: str, output_format: str, output_engine: str):
     print(f"Number of players={dot.number_of_nodes()}")
@@ -116,6 +117,7 @@ def _save_graph(dot: pygraphviz.AGraph, data_folder: str, output_filename: str, 
     execution_time = end_time - start_time
     print(f"Hint graph creation took {execution_time:.6f} seconds to run")
 
+
 def get_slot_ids_from_names(slot_names: list[str], slot_mapping: list[SlotMapping]) -> list[int]:
     """Get list of 1-based slot ids from a list of slot names"""
     if slot_names is None or slot_mapping is None:
@@ -127,10 +129,10 @@ def get_slot_ids_from_names(slot_names: list[str], slot_mapping: list[SlotMappin
 
         if len(matches) == 0:
             raise KeyError(f"slot_name={slot_name} not found in slot_mapping.json. "
-                            "Please check your spelling")
+                           "Please check your spelling")
         elif len(matches) >= 2:
             raise KeyError(f"slot_name={slot_name} found multiple times. This should never happen. "
-                            "Run get-room-info.py to pull fresh data")
+                           "Run get-room-info.py to pull fresh data")
 
         slot_ids.append(matches[0].id)
 
@@ -205,7 +207,8 @@ def main():
 
     # TODO - Rename parents/children to finder/receiver?
     # Formal term is predecessor/successor
-    hint_subgraph_group = parser.add_argument_group("Hint subgraph options. Shows all hints between all players in the subgraph (optional)")
+    hint_subgraph_group = parser.add_argument_group(
+        "Hint subgraph options. Shows all hints between all players in the subgraph (optional)")
     hint_subgraph_group.add_argument(
         "--hint-subgraph-slot",
         metavar="SLOT",
@@ -237,7 +240,8 @@ def main():
     # TODO - Provide an option for the hint subgraph to show in edges, out edges or both?
 
     # TODO - really make sure documentation is good here and in the example yaml file
-    hint_chain_group = parser.add_argument_group("Hint chain options. Shows hints in a single direction for all selected players (optional)")
+    hint_chain_group = parser.add_argument_group(
+        "Hint chain options. Shows hints in a single direction for all selected players (optional)")
     hint_chain_group.add_argument(
         "-hcc", "--hint-chain-config",
         type=Path,
@@ -266,7 +270,8 @@ def main():
         "--graph-rankdir",
         default="LR",
         choices=["LR", "RL", "TB", "BT"],
-        help="Graph layout direction. LR (left to right), RL (right to left), TB (top to bottom), BT (bottom to top). "
+        help="Graph layout direction. "
+             "LR (left to right), RL (right to left), TB (top to bottom), BT (bottom to top). "
              "Default is LR.")
 
     args = parser.parse_args()
@@ -334,7 +339,8 @@ def main():
 
     hint_chain_enabled: bool = args.hint_chain_config
     if hint_chain_enabled and hint_subgraph_enabled:
-        parser.error("hint chain options and hint subgraph options were both enabled but only one can be enabled at a time. Only provide options for one or the other or none at all")
+        parser.error("hint chain options and hint subgraph options were both enabled but only one can be enabled at a time. "
+                     "Only provide options for one or the other or none at all")
 
     hint_mode: HintMode = HintMode.HINT_GRAPH_MODE
     if hint_subgraph_enabled:
@@ -571,7 +577,8 @@ def main():
         # Create list of nodes to show
         visited_nodes: set[int] = set()
 
-        # Show all nodes if we're not looking for a specific subgraph. Also remove the special Archipelago server slot 0 from the list
+        # Show all nodes if we're not looking for a specific subgraph.
+        # Also remove the special Archipelago server slot 0 from the list
         if not show_child_nodes and not show_parent_nodes:
             visited_nodes.update([node.player_num for node in hints_processed if node.player_num != 0])
 
@@ -628,8 +635,8 @@ def main():
                 for member in item_link["members"]:
                     if dot.has_node(member):
                         dot.add_edge(u=item_link["slot"],
-                                    v=member,
-                                    label=f"{item_link["name"]} item_link")
+                                     v=member,
+                                     label=f"{item_link["name"]} item_link")
 
         _save_graph(dot, data_folder, output_filename, output_format, output_engine)
 
@@ -641,25 +648,26 @@ def main():
             hint_chain_data: dict[str, list] = yaml.safe_load(f)
 
         HintChain.validate_hint_chain_yaml(hint_chain_data)
-        hint_chain_config: HintChain = {
+        hint_chain_config: HintChain = HintChain({
             hint_chain_name: [HintChain.SingleChain(**datum) for datum in hint_chain_list]
             for hint_chain_name, hint_chain_list in hint_chain_data.items()
-        } # pyright: ignore[reportAssignmentType]
+        })
         with open("hint-chain-config-debug.json", "w") as f:
             json.dump(hint_chain_config, f, indent=3)
 
-        for name, config in hint_chain_config.items():
+        for name, config in hint_chain_config.hint_chain.items():
             dot = pygraphviz.AGraph(directed=True, rankdir=args.graph_rankdir, strict=False)
 
             print(f"Creating hint chain {name}")
             for config in config:
-                print(f"- Adding hint chain for slots {config.hint_chain} in direction {config.direction}. search_last_slot={config.search_last_slot}")
+                print(f"- Adding hint chain for slots {config.hint_chain} in direction {config.direction}. "
+                      "search_last_slot={config.search_last_slot}")
                 hint_chain_slot_ids: list[int] = get_slot_ids_from_names(config.hint_chain, slot_mapping)
 
                 # Add all slots to the hint chain
                 for slot_id in hint_chain_slot_ids:
                     dot.add_node(hints_processed[slot_id].player_num,
-                                label=hints_processed[slot_id].node_name)
+                                 label=hints_processed[slot_id].node_name)
 
                 # Find and add hints between each pair of slots
                 for slot1, slot2 in pairwise(hint_chain_slot_ids):
@@ -696,6 +704,7 @@ def main():
             output_filename = f"{fetch_time}_{name}"
             _save_graph(dot, data_folder, output_filename, output_format, output_engine)
             print()
+
 
 if __name__ == "__main__":
     main()
