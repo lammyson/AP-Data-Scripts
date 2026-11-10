@@ -2,6 +2,7 @@ import argparse
 from dataclasses import asdict, dataclass
 import enum
 import io
+from itertools import pairwise
 import pygraphviz
 import json
 from pathlib import Path
@@ -70,22 +71,38 @@ class PlayerHints:
     is_item_link: bool
     node_name: str
     hints_to_find: list[HintProcessed]
-    hints_for_others: list[HintProcessed]
+    hints_to_receive: list[HintProcessed]
 
+def _add_hint(dot: pygraphviz.AGraph, hint: HintProcessed, merge_hints: bool, show_entrances: bool):
+    """Add a hint to the given graph"""
+    if merge_hints:
+        label = f"{hint.item_name} at {hint.location_name}"
+    else:
+        label = f"{hint.item_name} at\n{hint.location_name}"
 
-# TODO - I really need to define what finder and receiver means (or find alternative labels and definitions) because I can never remember which
-# node is the reference frame
-# upstream/downstream?
-class HintChainDirection(enum.StrEnum):
-    FINDER = "finder"
-    RECEIVER = "receiver"
+    if hint.entrance and show_entrances:
+        label = f"{label}\n({hint.entrance})"
 
+    if merge_hints and dot.has_edge(hint.finding_player, hint.receiving_player):
+        edge = dot.get_edge(hint.finding_player, hint.receiving_player)
+        edge.attr['label'] = f"{label}\n{edge.attr['label']}"
+    else:
+        dot.add_edge(u=hint.finding_player, v=hint.receiving_player, label=label)
 
-class HintChainConfig(NamedTuple):
+class HintChain(NamedTuple):
+    class Direction(enum.StrEnum):
+        FINDER = "finder"      # Same as child direction
+        RECEIVER = "receiver"  # Same as parent direction
+
     name: str
     hint_chain: list[str]
-    direction: HintChainDirection
+    direction: HintChain.Direction
     search_last_slot: bool
+
+    # TODO - Raise a RuntimeError or something if this fails to validate. Look into schema validation
+    @staticmethod
+    def validate_hint_chain_yaml(hint_chain_data):
+        pass
 
 
 def get_slot_ids_from_names(slot_names: list[str], slot_mapping: list[SlotMapping]) -> list[int]:
@@ -156,10 +173,14 @@ def main():
         default=False,
         action="store_true",
         help="Show goaled slots")
+    parser.add_argument(
+        "--no-merge-hints",
+        default=False,
+        action="store_true",
+        help="Do not merge hints into a single edge. Default is to merge hints into a single edge")
 
     # TODO - Rename parents/children to finder/receiver?
     # Formal term is predecessor/successor
-
     hint_subgraph_group = parser.add_argument_group("Hint subgraph options. Shows all hints between all players in the subgraph (optional)")
     hint_subgraph_group.add_argument(
         "--hint-subgraph-slot",
@@ -186,6 +207,7 @@ def main():
         "Requires the --hint-subgraph-slot option. Overrides --depth option")
     # TODO - Provide an option for the hint subgraph to show in edges, out edges or both?
 
+    # TODO - really make sure documentation is good here and in the example yaml file
     hint_chain_group = parser.add_argument_group("Hint chain options. Shows hints in a single direction for all selected players (optional)")
     hint_chain_group.add_argument(
         "-hcc", "--hint-chain-config",
@@ -211,6 +233,12 @@ def main():
         choices=["dot", "circo"],
         help="Layout engine for graphviz to use when creating the hint graph. "
         "Default is dot")
+    output_group.add_argument(
+        "--graph-rankdir",
+        default="LR",
+        choices=["LR", "RL", "TB", "BT"],
+        help="Graph layout direction. LR (left to right), RL (right to left), TB (top to bottom), BT (bottom to top). "
+             "Default is LR.")
 
     args = parser.parse_args()
     debug: bool = args.debug
@@ -239,6 +267,7 @@ def main():
     show_entrances: bool = args.show_entrances
     show_found_hints: bool = args.show_found_hints
     show_goaled_slots: bool = args.show_goaled_slots
+    merge_hints: bool = not args.no_merge_hints
     output_format = args.output_format
     output_engine = args.output_engine
 
@@ -396,7 +425,7 @@ def main():
         alias=None,
         has_goaled=True,
         hints_to_find=[],
-        hints_for_others=[],
+        hints_to_receive=[],
         has_hint=False,
         is_item_link=False,
         node_name="Archipelago"
@@ -412,7 +441,7 @@ def main():
                 alias=tracker["aliases"][idx]["alias"],
                 has_goaled=tracker["player_status"][idx]["status"] == 30,
                 hints_to_find=[],
-                hints_for_others=[],
+                hints_to_receive=[],
                 has_hint=False,
                 is_item_link=False,
                 node_name=set_node_name(slot_name=player.name, alias=tracker["aliases"][idx]["alias"], is_item_link=False)
@@ -425,7 +454,7 @@ def main():
                 alias=None,
                 has_goaled=False,
                 hints_to_find=[],
-                hints_for_others=[],
+                hints_to_receive=[],
                 has_hint=False,
                 is_item_link=True,
                 node_name=set_node_name(slot_name=player.name, alias=None, is_item_link=True)
@@ -445,7 +474,7 @@ def main():
 
         # TODO - Eventually make this configurable
         # Skip non-progression hints
-        if hint.item_flags & 0x1 != 1:
+        if hint.item_flags & 0x1 != 0x1:
             continue
 
         # Skip received hints from slots that are goaled
@@ -471,7 +500,7 @@ def main():
             item_flags=hint.item_flags,
             status=hint.status
         ))
-        hints_processed[hint.receiving_player].hints_for_others.append(HintProcessed(
+        hints_processed[hint.receiving_player].hints_to_receive.append(HintProcessed(
             finding_player=hint.finding_player,
             receiving_player=hint.receiving_player,
             location_name=location[0],
@@ -492,57 +521,14 @@ def main():
         else:
             json.dump([asdict(hint) for hint in hints_processed], f)
 
-    # Create list of nodes to show
-    visited_nodes: set[int] = set()
-
-    # Show all nodes if we're not looking for a specific subgraph. Also remove the special Archipelago server slot 0 from the list
-    if not show_child_nodes and not show_parent_nodes:
-        visited_nodes.update([node.player_num for node in hints_processed if node.player_num != 0])
-
-    # Show nodes that depend on us
-    if show_child_nodes:
-        nodes_to_visit: list[PlayerHints] = [hints_processed[hint_subgraph_slot_id]]
-        nodes_next_loop: list[PlayerHints] = []
-        visited_nodes_child: set[int] = set([hints_processed[hint_subgraph_slot_id].player_num])
-        while child_depth > 0:
-            while nodes_to_visit:
-                current_node = nodes_to_visit.pop()
-                for hint in current_node.hints_to_find:
-                    if hint.receiving_player not in visited_nodes_child:
-                        visited_nodes_child.add(hint.receiving_player)
-                        nodes_next_loop.append(hints_processed[hint.receiving_player])
-            # Reset for the next depth
-            nodes_to_visit = nodes_next_loop
-            nodes_next_loop = []
-            child_depth -= 1
-        visited_nodes.update(visited_nodes_child)
-
-    # Show nodes that we depend on
-    if show_parent_nodes:
-        nodes_to_visit: list[PlayerHints] = [hints_processed[hint_subgraph_slot_id]]
-        nodes_next_loop: list[PlayerHints] = []
-        visited_nodes_parent: set[int] = set([hints_processed[hint_subgraph_slot_id].player_num])
-        while parent_depth > 0:
-            while nodes_to_visit:
-                current_node = nodes_to_visit.pop()
-                for hint in current_node.hints_for_others:
-                    if hint.finding_player not in visited_nodes_parent:
-                        visited_nodes_parent.add(hint.finding_player)
-                        nodes_next_loop.append(hints_processed[hint.finding_player])
-
-            # Reset for the next depth
-            nodes_to_visit = nodes_next_loop
-            nodes_next_loop = []
-            parent_depth -= 1
-        visited_nodes.update(visited_nodes_parent)
-
     # Create the graph
-    dot = pygraphviz.AGraph(directed=True, rankdir='LR', strict=False)
+    dot = pygraphviz.AGraph(directed=True, rankdir=args.graph_rankdir, strict=False)
 
     # Highlight nodes if they are called out even if they won't connect to the graph with current settings
     if slot_ids_to_highlight:
         for slot_id in slot_ids_to_highlight:
-            dot.add_node(f"{hints_processed[slot_id].player_num}",
+            print(f"highlighting slot {hints_processed[slot_id].node_name} ({slot_id})")
+            dot.add_node(hints_processed[slot_id].player_num,
                          label=hints_processed[slot_id].node_name,
                          color="darkgreen",
                          fillcolor="darkgreen",
@@ -550,140 +536,123 @@ def main():
                          fontcolor="white")
 
     if hint_mode is HintMode.HINT_GRAPH_MODE or hint_mode is HintMode.HINT_SUBGRAPH_MODE:
-        # TODO - Merge multiple hints to the same slot into a single edge? (should speed things up)
+        # Create list of nodes to show
+        visited_nodes: set[int] = set()
+
+        # Show all nodes if we're not looking for a specific subgraph. Also remove the special Archipelago server slot 0 from the list
+        if not show_child_nodes and not show_parent_nodes:
+            visited_nodes.update([node.player_num for node in hints_processed if node.player_num != 0])
+
+        # Show nodes that depend on us
+        if show_child_nodes:
+            nodes_to_visit: list[PlayerHints] = [hints_processed[hint_subgraph_slot_id]]
+            nodes_next_loop: list[PlayerHints] = []
+            visited_nodes_child: set[int] = set([hints_processed[hint_subgraph_slot_id].player_num])
+            while child_depth > 0:
+                while nodes_to_visit:
+                    current_node = nodes_to_visit.pop()
+                    for hint in current_node.hints_to_find:
+                        if hint.receiving_player not in visited_nodes_child:
+                            visited_nodes_child.add(hint.receiving_player)
+                            nodes_next_loop.append(hints_processed[hint.receiving_player])
+                # Reset for the next depth
+                nodes_to_visit = nodes_next_loop
+                nodes_next_loop = []
+                child_depth -= 1
+            visited_nodes.update(visited_nodes_child)
+
+        # Show nodes that we depend on
+        if show_parent_nodes:
+            nodes_to_visit: list[PlayerHints] = [hints_processed[hint_subgraph_slot_id]]
+            nodes_next_loop: list[PlayerHints] = []
+            visited_nodes_parent: set[int] = set([hints_processed[hint_subgraph_slot_id].player_num])
+            while parent_depth > 0:
+                while nodes_to_visit:
+                    current_node = nodes_to_visit.pop()
+                    for hint in current_node.hints_to_receive:
+                        if hint.finding_player not in visited_nodes_parent:
+                            visited_nodes_parent.add(hint.finding_player)
+                            nodes_next_loop.append(hints_processed[hint.finding_player])
+
+                # Reset for the next depth
+                nodes_to_visit = nodes_next_loop
+                nodes_next_loop = []
+                parent_depth -= 1
+            visited_nodes.update(visited_nodes_parent)
+
         # Show the full graph/subgraph for all the nodes selected
         for index in visited_nodes:
             player = hints_processed[index]
             if player.has_hint:
-                dot.add_node(f"{player.player_num}", label=player.node_name)
+                dot.add_node(player.player_num, label=player.node_name)
                 for hint in player.hints_to_find:
                     if hint.finding_player in visited_nodes and hint.receiving_player in visited_nodes:
-                        label = f"{hint.item_name} at\n{hint.location_name}"
-                        if hint.entrance and show_entrances:
-                            label = f"{label}\n({hint.entrance})"
-                        dot.add_edge(u=f"{hint.finding_player}",
-                                    v=f"{hint.receiving_player}",
-                                    label=label)
+                        _add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
 
     # Hint chains!
     elif hint_mode is HintMode.HINT_CHAIN_MODE:
         print()
         print("Making hint chain!")
-        print()
-
-        # TODO - Raise a RuntimeError or something if this fails to validate
-        def validate_hint_chain_yaml(hint_chain_data):
-            pass
 
         with open(args.hint_chain_config, "r") as f:
             hint_chain_data: dict[str, list] = yaml.safe_load(f)
-            validate_hint_chain_yaml(hint_chain_data)
+            HintChain.validate_hint_chain_yaml(hint_chain_data)
 
-        hint_chain_config: dict[str, list[HintChainConfig]] = {
-            key: [HintChainConfig(**datum) for datum in list_data]
+        hint_chain_config: dict[str, list[HintChain]] = {
+            key: [HintChain(**datum) for datum in list_data]
             for key, list_data in hint_chain_data.items()
         }
 
-        for chain in hint_chain_config["hint_chains"]:
-            print(f"Processing hint chain {chain.name} for slots {chain.hint_chain} in direction {chain.direction}. search_last_slot={chain.search_last_slot}")
-            hint_chain_slot_ids: list[int] = get_slot_ids_from_names(chain.hint_chain, slot_mapping)
+        for chain_config in hint_chain_config["hint_chains"]:
+            print(f"Adding hint chain '{chain_config.name}' for slots {chain_config.hint_chain} in direction {chain_config.direction}. search_last_slot={chain_config.search_last_slot}")
+            hint_chain_slot_ids: list[int] = get_slot_ids_from_names(chain_config.hint_chain, slot_mapping)
+
             print(f"\thint_chain_slot_ids={hint_chain_slot_ids}")
 
-            # TODO - Need to iterate down the chain instead of just looking at the first one
-            hint_chain_start_slot_id: int = hint_chain_slot_ids[0]
+            # Add all slots to the hint chain
+            for slot_id in hint_chain_slot_ids:
+                dot.add_node(hints_processed[slot_id].player_num,
+                             label=hints_processed[slot_id].node_name)
 
-            dot.add_node(f"{hints_processed[hint_chain_start_slot_id].player_num}",
-                        label=hints_processed[hint_chain_start_slot_id].node_name)
+            # Find and add hints between each pair of slots
+            for slot1, slot2 in pairwise(hint_chain_slot_ids):
+                head_slot_id: int | None = None
+                tail_slot_id: int | None = None
+                if chain_config.direction == HintChain.Direction.FINDER:
+                    head_slot_id = slot1
+                    tail_slot_id = slot2
+                elif chain_config.direction == HintChain.Direction.RECEIVER:
+                    head_slot_id = slot2
+                    tail_slot_id = slot1
 
-            visited_nodes: set[int] = set()
+                if head_slot_id is None or tail_slot_id is None:
+                    raise RuntimeError("Unable to get slot ids")
 
-            # TODO - Need to look for the specific receiver slot
-            if chain.direction == HintChainDirection.RECEIVER:
-                parent_depth = 1 # TODO - This has to come from somewhere?
-                nodes_to_visit: list[PlayerHints] = [hints_processed[hint_chain_start_slot_id]]
-                nodes_next_loop: list[PlayerHints] = []
-                visited_nodes_parent: set[int] = set([hints_processed[hint_chain_start_slot_id].player_num])
-                while parent_depth > 0:
-                    while nodes_to_visit:
-                        current_node = nodes_to_visit.pop()
-                        for hint in current_node.hints_for_others:
-                            if hint.finding_player not in visited_nodes_parent:
-                                visited_nodes_parent.add(hint.finding_player)
-                                nodes_next_loop.append(hints_processed[hint.finding_player])
+                for hint in hints_processed[head_slot_id].hints_to_find:
+                    if hint.finding_player == head_slot_id and hint.receiving_player == tail_slot_id:
+                        _add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
 
-                    # Reset for the next depth
-                    nodes_to_visit = nodes_next_loop
-                    nodes_next_loop = []
-                    parent_depth -= 1
-                visited_nodes.update(visited_nodes_parent)
+            if chain_config.search_last_slot:
+                last_slot_id: int = hint_chain_slot_ids[-1]
 
-            # TODO - Need to look for the specific finder slot
-            if chain.direction == HintChainDirection.FINDER:
-                child_depth = 1 # TODO - This has to come from somewhere?
-                nodes_to_visit: list[PlayerHints] = [hints_processed[hint_chain_start_slot_id]]
-                nodes_next_loop: list[PlayerHints] = []
-                visited_nodes_child: set[int] = set([hints_processed[hint_chain_start_slot_id].player_num])
-                while child_depth > 0:
-                    while nodes_to_visit:
-                        current_node = nodes_to_visit.pop()
-                        for hint in current_node.hints_to_find:
-                            if hint.receiving_player not in visited_nodes_child:
-                                visited_nodes_child.add(hint.receiving_player)
-                                nodes_next_loop.append(hints_processed[hint.receiving_player])
-                    # Reset for the next depth
-                    nodes_to_visit = nodes_next_loop
-                    nodes_next_loop = []
-                    child_depth -= 1
-                visited_nodes.update(visited_nodes_child)
+                hints_to_search: list[HintProcessed] = []
+                if chain_config.direction == HintChain.Direction.FINDER:
+                    hints_to_search = hints_processed[last_slot_id].hints_to_find
+                elif chain_config.direction == HintChain.Direction.RECEIVER:
+                    hints_to_search = hints_processed[last_slot_id].hints_to_receive
 
-            # TODO - Need to verify if self hints work
-
-            # Need to have a base node and then look for hints to the nodes that we want to connect to
-            # This probably needs to be done iteratively as we're discovering the hint chain
-            for index in visited_nodes:
-                player = hints_processed[index]
-                if player.has_hint:
-                    dot.add_node(f"{player.player_num}", label=player.node_name)
-
-                    hints_to_search: list[HintProcessed] = []
-                    if chain.direction == HintChainDirection.FINDER:
-                        hints_to_search = player.hints_for_others
-                    elif chain.direction == HintChainDirection.RECEIVER:
-                        hints_to_search = player.hints_to_find
-
-                    for hint in hints_to_search:
-                        add_hint: bool = False
-                        if chain.direction == HintChainDirection.FINDER:
-                            add_hint = hint.finding_player == hint_chain_start_slot_id and hint.receiving_player in visited_nodes
-                        elif chain.direction == HintChainDirection.RECEIVER:
-                            add_hint = hint.receiving_player == hint_chain_start_slot_id and hint.finding_player in visited_nodes
-
-                        if add_hint:
-                            label = f"{hint.item_name} at\n{hint.location_name}"
-                            if hint.entrance and show_entrances:
-                                label = f"{label}\n({hint.entrance})"
-                            dot.add_edge(u=f"{hint.finding_player}",
-                                        v=f"{hint.receiving_player}",
-                                        label=label)
-
-            print()
-
-
-
-
-
-        # print(f"\t\thint-chain-start-slot={args.hint_chain_start_slot}")
-        # print(f"\t\thint-chain-direction={args.hint_chain_direction}")
-        # print(f"\t\thint-chain-parent-slots={args.hint_chain_parent_slots}")
-        # print(f"\t\thint-chain-child-slots={args.hint_chain_child_slots}")
+                for hint in hints_to_search:
+                    dot.add_node(hint.finding_player, label=hints_processed[hint.finding_player].node_name)
+                    dot.add_node(hint.receiving_player, label=hints_processed[hint.receiving_player].node_name)
+                    _add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
 
     # Add item_link edges to all members in the group
     for item_link in static_tracker["groups"]:
         if dot.has_node(item_link["slot"]):
             for member in item_link["members"]:
                 if dot.has_node(member):
-                    dot.add_edge(u=f"{item_link["slot"]}",
-                                 v=f"{member}",
+                    dot.add_edge(u=item_link["slot"],
+                                 v=member,
                                  label=f"{item_link["name"]} item_link")
 
     print(f"Number of players={dot.number_of_nodes()}")
@@ -698,6 +667,8 @@ def main():
     start_time = time.perf_counter()
     if output_format == "avif":
         jpg_data = dot.draw(format="jpg", prog=output_engine, args="-v")
+        if jpg_data is None:
+            raise RuntimeError("Unable to convert to an intermediate jpg when creating the avif file")
         with Image.open(io.BytesIO(jpg_data)) as image:
             image.save(output_file)
     # TODO - Configure png to save it smaller
