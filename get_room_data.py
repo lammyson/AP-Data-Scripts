@@ -1,7 +1,7 @@
 import argparse
 from bs4 import BeautifulSoup
 import asyncio
-import httpx
+import httpx2
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -107,13 +107,13 @@ class RoomData():
             endpoint: str,
             endpoint_pretty_name: str,
             file: Path,
-            client: httpx.AsyncClient,
+            client: httpx2.AsyncClient,
             semaphore: asyncio.Semaphore,
             raise_error: bool = True) -> dict[str, Any]:
         async with semaphore:
             if self._debug:
                 print(f"Requesting {endpoint_pretty_name} https://archipelago.gg/api/{endpoint}")
-            response: httpx.Response = await client.get(f"https://archipelago.gg/api/{endpoint}")
+            response: httpx2.Response = await client.get(f"https://archipelago.gg/api/{endpoint}")
 
             if raise_error:
                 response.raise_for_status()
@@ -132,12 +132,12 @@ class RoomData():
             endpoint: str,
             endpoint_pretty_name: str,
             file: Path,
-            client: httpx.AsyncClient,
+            client: httpx2.AsyncClient,
             semaphore: asyncio.Semaphore) -> str:
         async with semaphore:
             if self._debug:
                 print(f"Requesting {endpoint_pretty_name} https://archipelago.gg/{endpoint}")
-            response: httpx.Response = await client.get(f"https://archipelago.gg/{endpoint}")
+            response: httpx2.Response = await client.get(f"https://archipelago.gg/{endpoint}")
             response.raise_for_status()
 
             if self._debug:
@@ -350,7 +350,7 @@ class RoomData():
             self._verify_tracker_suuid(tracker_suuid)
 
         sem = asyncio.Semaphore(4)
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx2.AsyncClient(timeout=60) as client:
             room_status: dict[str, Any] | None = None
             checks_table: list[dict[str, Any]] | None = None
             if room_suuid:

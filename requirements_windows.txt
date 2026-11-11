@@ -1,7 +1,7 @@
 -r Archipelago/requirements.txt
 
 beautifulsoup4>=4.15.0
-httpx>=0.28.1
+httpx2>=2.16.0
 jsonschema>=4.26.0
 pygraphviz>=2.0.4
 pyyaml>=6.0.3

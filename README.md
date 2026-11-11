@@ -90,7 +90,7 @@ Parses the `*.archipelago` file that's part of a multiworld generation's output 
 # Credits
 - [Archipelago](https://archipelago.gg) - [source](https://github.com/ArchipelagoMW/Archipelago)
 - [beautifulsoup](https://pypi.org/project/beautifulsoup4)
-- [httpx](https://pypi.org/project/httpx)
+- [httpx2](https://pypi.org/project/httpx2)
 - [jsonschema](https://pypi.org/project/jsonschema)
 - [pygraphviz](https://pypi.org/project/pygraphviz)
 - [pyyaml](https://pypi.org/project/PyYAML)
