@@ -16,6 +16,10 @@ import yaml
 
 from get_room_data import get_file_safe_name, RoomData, SlotMapping
 
+
+script_dir = Path(__file__).resolve().parent
+
+
 # TODO - Make this into a library
 # - Function that processes the raw hints into hints_processed.json
 # - Function that takes the data from hints_processed.json and does all the display stuff
@@ -652,7 +656,7 @@ def main():
         with open(args.hint_chain_config, "r") as f:
             hint_chain_data: dict[str, list] = yaml.safe_load(f)
 
-        validate_yaml(args.hint_chain_config, "schema/hint-chain-schema.json")
+        validate_yaml(args.hint_chain_config, f"{script_dir}/schema/hint-chain-schema.json")
         hint_chain_config: HintChain = HintChain({
             hint_chain_name: [HintChain.SingleChain(**datum) for datum in hint_chain_list]
             for hint_chain_name, hint_chain_list in hint_chain_data.items()
