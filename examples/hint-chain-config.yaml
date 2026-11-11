@@ -1,17 +1,35 @@
+# yaml-language-server: $schema=../schema/hint-chain-schema.yaml
+
 # Hint chain configuration
 #
 # Each top level section defines multiple hint chains that will be put onto the same graph.
 # The name of each top level section will be used as the output filename
+minimal_example_for_copy_paste:
+    # List of slots for this hint chain
+  - hint_chain_slots:
+      - Player9
+    # Direction of the `hint_chain` from top to bottom
+    # `finder` - The 1st slot is finding a hint for the 2nd slot, 2nd slot is finding a hint for the 3rd slot, etc
+    # `receiver` - The 1st slot is receiving a hint from the 2nd slot, 2nd slot is receiving a hint from the 3rd slot, etc
+    direction: finder
+    # Show all hints connected to the last slot in `hint_chain` using the specified `direction`
+    search_last_slot: true
 
-# This will display the following hint chain
-# `all hints Player3 is receiving → Player3 → Player2 → Player1 → all hints Player1 is finding`
+# Hint chain configuration
+#
+# Each top level section defines multiple hint chains that will be put onto the same graph.
+# The name of each top level section will be used as the output filename
 #
 # Output filename will be `<data_folder>/Player1_hint_chain.<ext>`
+#
+# This will display the following hint chain
+# `all hints Player3 is receiving → Player3 → Player2 → Player1 → all hints Player1 is finding`
 Player1_hint_chain:
 
-  # This will display Player3 → Player2 → Player1 along with all slots/hints that Player3 is receiving
-  - hint_chain:
-      # List of slots for this hint chain
+    # List of slots for this hint chain
+    #
+    # This will display Player3 → Player2 → Player1 along with all slots/hints that Player3 is receiving
+  - hint_chain_slots:
       - Player1
       - Player2
       - Player3
@@ -26,7 +44,7 @@ Player1_hint_chain:
     search_last_slot: true
 
   # This will display all hints Player1 is finding, including for itself
-  - hint_chain:
+  - hint_chain_slots:
       - Player1
     direction: finder
     search_last_slot: true
@@ -34,24 +52,24 @@ Player1_hint_chain:
 # This will display the following hint chain
 # `Player5 → Player4`
 Player4_hint_chain:
-  - hint_chain:
+  - hint_chain_slots:
       - Player4
       - Player5
     direction: receiver
     search_last_slot: false
 
 # This will display the following hint chain
-# `Player7` ↘
-#           `Player6`
-# `Player8` ↗
+#                                     `Player7` ↘
+#                                               `Player6`
+# `all hints Player8 is receiving` -> `Player8` ↗
 Player6_hint_chain:
-  - hint_chain:
+  - hint_chain_slots:
       - Player6
       - Player7
     direction: receiver
     search_last_slot: false
-  - hint_chain:
+  - hint_chain_slots:
       - Player6
       - Player8
     direction: receiver
-    search_last_slot: false
+    search_last_slot: true

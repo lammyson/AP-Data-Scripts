@@ -5,10 +5,11 @@ from dataclasses import asdict, dataclass
 import enum
 import io
 from itertools import pairwise
-import pygraphviz
 import json
+import jsonschema
 from pathlib import Path
 from PIL import Image
+import pygraphviz
 from typing import NamedTuple
 import time
 import yaml
@@ -95,12 +96,9 @@ def _add_hint(dot: pygraphviz.AGraph, hint: HintProcessed, merge_hints: bool, sh
 
 
 def _save_graph(dot: pygraphviz.AGraph, data_folder: str, output_filename: str, output_format: str, output_engine: str):
-    print(f"Number of players={dot.number_of_nodes()}")
-    print(f"Number of hints={dot.number_of_edges()}")
-
     # Save it!
     output_file: str = f"{data_folder}/graphs/{output_filename}.{output_format}"
-    print(f"Saving to {output_file}")
+    print(f"Number of players={dot.number_of_nodes()} | Number of hints={dot.number_of_edges()} | Saving to \"{output_file}\"")
     Path(f"{data_folder}/graphs/dot").mkdir(parents=True, exist_ok=True)
     dot.write(f"{data_folder}/graphs/dot/{output_filename}.dot")
 
@@ -157,16 +155,21 @@ class HintChain(NamedTuple):
         RECEIVER = "receiver"  # Same as parent direction
 
     class SingleChain(NamedTuple):
-        hint_chain: list[str]
+        hint_chain_slots: list[str]
         direction: HintChain.Direction
         search_last_slot: bool
 
     hint_chain: dict[str, list[SingleChain]]
 
-    # TODO - Raise a RuntimeError or something if this fails to validate. Look into schema validation
-    @staticmethod
-    def validate_hint_chain_yaml(hint_chain_data):
-        pass
+
+# TODO - Test if file doesn't exist
+# TODO - Test if validate fails
+def validate_yaml(yaml_file: str, schema_file: str):
+    with open(yaml_file, "r") as f:
+        yaml_data = yaml.safe_load(f)
+    with open(schema_file, "r") as f:
+        schema_data = yaml.safe_load(f)
+    jsonschema.validate(yaml_data, schema_data)
 
 
 def main():
@@ -241,7 +244,6 @@ def main():
         help="(Optional) List of slot names to highlight in the hint (sub)graph")
     # TODO - Provide an option for the hint subgraph to show in edges, out edges or both?
 
-    # TODO - really make sure documentation is good here and in the example yaml file
     hint_chain_group = parser.add_argument_group(
         "Hint chain options. Shows hints in a single direction for all selected players (optional)")
     hint_chain_group.add_argument(
@@ -641,6 +643,7 @@ def main():
                                      label=f"{item_link["name"]} item_link")
 
         _save_graph(dot, data_folder, output_filename, output_format, output_engine)
+        print()
 
     # Hint chains!
     elif hint_mode is HintMode.HINT_CHAIN_MODE:
@@ -649,22 +652,20 @@ def main():
         with open(args.hint_chain_config, "r") as f:
             hint_chain_data: dict[str, list] = yaml.safe_load(f)
 
-        HintChain.validate_hint_chain_yaml(hint_chain_data)
+        validate_yaml(args.hint_chain_config, "schema/hint-chain-schema.json")
         hint_chain_config: HintChain = HintChain({
             hint_chain_name: [HintChain.SingleChain(**datum) for datum in hint_chain_list]
             for hint_chain_name, hint_chain_list in hint_chain_data.items()
         })
-        with open("hint-chain-config-debug.json", "w") as f:
-            json.dump(hint_chain_config, f, indent=3)
 
         for name, config in hint_chain_config.hint_chain.items():
             dot = pygraphviz.AGraph(directed=True, rankdir=args.graph_rankdir, strict=False)
 
             print(f"Creating hint chain {name}")
             for config in config:
-                print(f"- Adding hint chain for slots {config.hint_chain} in direction {config.direction}. "
-                      "search_last_slot={config.search_last_slot}")
-                hint_chain_slot_ids: list[int] = get_slot_ids_from_names(config.hint_chain, slot_mapping)
+                print(f"- Adding hint chain for slots {config.hint_chain_slots} in direction {config.direction}. "
+                      f"search_last_slot={config.search_last_slot}")
+                hint_chain_slot_ids: list[int] = get_slot_ids_from_names(config.hint_chain_slots, slot_mapping)
 
                 # Add all slots to the hint chain
                 for slot_id in hint_chain_slot_ids:

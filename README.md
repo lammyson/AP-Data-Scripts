@@ -69,7 +69,9 @@ TODO - Generate a personal async and get some examples. Mainly want screenshots 
 Downloads data from an Archipelago webhost that implements the [Webhost API](https://github.com/ArchipelagoMW/Archipelago/blob/main/docs/webhost%20api.md). Required by some of the scripts below
 
 ## [`create_hint_graph.py`](create_hint_graph.py)
-Creates a hint graph of a room's hints. Graphs all unfound progression hints from all non-goaled slots by default.
+Creates a hint graph of a room's hints. Graphs all unfound progression hints from all non-goaled slots by default. Can also do the following:
+- Create a subgraph of the room's hints centered around a certain slot and going up to a certain depth in either or both directions
+- Create a hint chain. See [`examples/hint-chain-config.yaml`](examples/hint-chain-config.yaml) for more details
 
 ### Disclaimers
 - Hint chains can be misleading since it depends on players hinting in the first place
@@ -89,6 +91,7 @@ Parses the `*.archipelago` file that's part of a multiworld generation's output 
 - [Archipelago](https://archipelago.gg) - [source](https://github.com/ArchipelagoMW/Archipelago)
 - [beautifulsoup](https://pypi.org/project/beautifulsoup4)
 - [httpx](https://pypi.org/project/httpx)
+- [jsonschema](https://pypi.org/project/jsonschema)
 - [pygraphviz](https://pypi.org/project/pygraphviz)
 - [pyyaml](https://pypi.org/project/PyYAML)
 - [tabulate](https://pypi.org/project/tabulate)
