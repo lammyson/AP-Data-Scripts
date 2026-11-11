@@ -166,14 +166,15 @@ class HintChain(NamedTuple):
     hint_chain: dict[str, list[SingleChain]]
 
 
-# TODO - Test if file doesn't exist
-# TODO - Test if validate fails
 def validate_yaml(yaml_file: str, schema_file: str):
     with open(yaml_file, "r") as f:
         yaml_data = yaml.safe_load(f)
     with open(schema_file, "r") as f:
         schema_data = yaml.safe_load(f)
-    jsonschema.validate(yaml_data, schema_data)
+    try:
+        jsonschema.validate(yaml_data, schema_data)
+    except jsonschema.ValidationError as e:
+        raise jsonschema.ValidationError(f"{e.message} at {e.absolute_path}")
 
 
 def main():
