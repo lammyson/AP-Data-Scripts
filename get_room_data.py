@@ -9,6 +9,10 @@ from typing import Any, NamedTuple
 import warnings
 
 
+script_dir = Path(__file__).resolve().parent
+datapackage_path = Path(f"{script_dir}/.datapackages")
+
+
 class SlotMapping(NamedTuple):
     id: int  # 1-based id
     name: str
@@ -88,7 +92,7 @@ class RoomData():
         for game, data in self.static_tracker["datapackage"].items():
             safe_game_name: str = get_file_safe_name(game)
             checksum: str = data["checksum"]
-            datapackage_file = f".datapackages/{safe_game_name}/{checksum}.json"
+            datapackage_file = f"{datapackage_path}/{safe_game_name}/{checksum}.json"
             if Path(datapackage_file).is_file():
                 with open(datapackage_file) as f:
                     self.room_datapackages.update({game: json.load(f)})
@@ -322,7 +326,7 @@ class RoomData():
 
         # Create output folder and get the current time
         Path(output_folder).mkdir(parents=True, exist_ok=True)
-        Path(".datapackages").mkdir(parents=True, exist_ok=True)
+        datapackage_path.mkdir(parents=True, exist_ok=True)
         now_time = datetime.now(tz=timezone.utc)
 
         # Verify the time the data was last fetched so that we don't request data too quickly
@@ -424,7 +428,7 @@ class RoomData():
                 for game, data in static_tracker["datapackage"].items():
                     safe_game_name: str = get_file_safe_name(game)
                     checksum: str = data["checksum"]
-                    game_folder = Path(f".datapackages/{safe_game_name}")
+                    game_folder = Path(f"{datapackage_path}/{safe_game_name}")
                     datapackage_file = Path(f"{game_folder}/{checksum}.json")
                     if not datapackage_file.is_file():
                         Path.mkdir(game_folder, parents=True, exist_ok=True)
