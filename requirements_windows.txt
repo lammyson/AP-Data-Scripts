@@ -2,6 +2,7 @@
 
 beautifulsoup4>=4.15.0
 httpx>=0.28.1
+jsonschema>=4.26.0
 pygraphviz>=2.0.4
 pyyaml>=6.0.3
 tabulate>=0.10.0

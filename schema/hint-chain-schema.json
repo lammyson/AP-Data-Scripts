@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hint chain configuration",
+  "type": "object",
+  "patternProperties": {
+    "^.*$": {
+      "description": "Hint chain configuration\nEach top level section defines multiple hint chains that will be put onto the same graph. The name of each top level section will be used as the output filename. Output filename will be `<data_folder>/<name>.<ext>`",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "hint_chain_slots": {
+            "description": "List of slots for this hint chain",
+            "type": "array",
+            "items": {
+              "description": "Slot name",
+              "type": "string"
+            }
+          },
+          "direction": {
+            "description": "Direction of the `hint_chain` from top to bottom. Valid values are `finder` and `receiver`\n`finder` - The 1st slot is finding a hint for the 2nd slot, 2nd slot is finding a hint for the 3rd slot, etc\n`receiver` - The 1st slot is receiving a hint from the 2nd slot, 2nd slot is receiving a hint from the 3rd slot, etc",
+            "enum": [
+              "finder",
+              "receiver"
+            ]
+          },
+          "search_last_slot": {
+            "description": "Show all hints connected to the last slot in `hint_chain` using the specified `direction`. This is useful when searching out a hint chain",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hint_chain_slots", "direction", "search_last_slot"
+        ]
+      }
+    }
+  }
+}
