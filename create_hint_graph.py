@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 import enum
 import io
 from itertools import pairwise
@@ -19,14 +20,11 @@ from get_room_data import get_file_safe_name, RoomData, SlotMapping
 
 script_dir = Path(__file__).resolve().parent
 
-
 # TODO - Make this into a library
-# - Function that processes the raw hints into hints_processed.json
 # - Function that takes the data from hints_processed.json and does all the display stuff
 # So then we can make a python script that does
 # - Process hints into hints_processed.json once
 # - Call the hint graph creation function multiple times with different args depending on what we want
-
 
 # https://github.com/ArchipelagoMW/Archipelago/blob/main/docs/network%20protocol.md#hintstatus
 class HintStatus(enum.IntEnum):
@@ -82,7 +80,7 @@ class HintMode(enum.IntEnum):
     HINT_CHAIN_MODE = 2     # Show a smaller set of a subgraph with only certain directions displayed
 
 
-def _add_hint(dot: pygraphviz.AGraph, hint: HintProcessed, merge_hints: bool, show_entrances: bool):
+def add_hint(dot: pygraphviz.AGraph, hint: HintProcessed, merge_hints: bool, show_entrances: bool):
     """Add a hint to the given graph"""
     if merge_hints:
         label = f"{hint.item_name} at {hint.location_name}"
@@ -99,7 +97,7 @@ def _add_hint(dot: pygraphviz.AGraph, hint: HintProcessed, merge_hints: bool, sh
         dot.add_edge(u=hint.finding_player, v=hint.receiving_player, label=label)
 
 
-def _save_graph(dot: pygraphviz.AGraph, data_folder: str, output_filename: str, output_format: str, output_engine: str):
+def save_graph(dot: pygraphviz.AGraph, data_folder: str, output_filename: str, output_format: str, output_engine: str):
     # Save it!
     output_file: str = f"{data_folder}/graphs/{output_filename}.{output_format}"
     print(f"Number of players={dot.number_of_nodes()} | Number of hints={dot.number_of_edges()} | Saving to \"{output_file}\"")
@@ -176,6 +174,140 @@ def validate_yaml(yaml_file: str, schema_file: str):
     except jsonschema.ValidationError as e:
         raise jsonschema.ValidationError(f"{e.message} at {e.absolute_path}")
 
+
+def process_hints(
+        data_folder: str | Path,
+        tracker: dict,
+        slot_mapping: list[SlotMapping],
+        room_datapackages: dict,
+        show_found_hints: bool,
+        show_goaled_slots: bool,
+        debug: bool = False) -> list[PlayerHints]:
+
+    # Flatten all the tracker["hints"][idx]["hints"] into a single list of dicts while getting rid of dupes
+    # Add 1 for the special Archipelago slot at slot 0
+    # finding_player_count = [0] * (len(static_tracker["player_game"]) + len(static_tracker["groups"]) + 1)
+    hints_raw_unique: list[Hint] = []
+    for hint_dict in tracker["hints"]:
+        for h in hint_dict["hints"]:
+            hint = Hint._make(h)
+            if hint not in hints_raw_unique:
+                hints_raw_unique.append(hint)
+
+                # Count how many unfound progression hints a slot has been hinted to find
+                # if not hint.found and (hint.item_flags & 0x1 == 1):
+                #     finding_player_count[hint.finding_player] += 1
+    # high_hint_count_slots = [index + 1 for index, value in enumerate(finding_player_count) if value >= high_hint_count]
+
+    if debug:
+        with open(f"{data_folder}/make-hint-graph-debug/hints_raw_unique.json", "w") as f:
+            json.dump(hints_raw_unique, f, indent=3)
+
+    # Create the initial list of hints with
+    hints_processed: list[PlayerHints] = []
+
+    # Add the special Archipelago slot (also makes indexing 0-based yay!)
+    hints_processed.append(PlayerHints(
+        player_num=0,
+        slot_name="Archipelago",
+        game="Archipelago",
+        alias=None,
+        has_goaled=True,
+        hints_to_find=[],
+        hints_to_receive=[],
+        has_hint=False,
+        is_item_link=False,
+        node_name="Archipelago"
+    ))
+
+    # Add the normal slots
+    for idx, player in enumerate(slot_mapping):
+        if len(player.item_link_members) == 0:
+            hints_processed.append(PlayerHints(
+                player_num=tracker["aliases"][idx]["player"],
+                slot_name=player.name,
+                game=player.game,
+                alias=tracker["aliases"][idx]["alias"],
+                has_goaled=tracker["player_status"][idx]["status"] == 30,
+                hints_to_find=[],
+                hints_to_receive=[],
+                has_hint=False,
+                is_item_link=False,
+                node_name=set_node_name(slot_name=player.name, alias=tracker["aliases"][idx]["alias"], is_item_link=False)
+            ))
+        else:
+            hints_processed.append(PlayerHints(
+                player_num=player.id,
+                slot_name=player.name,
+                game=player.game,
+                alias=None,
+                has_goaled=False,
+                hints_to_find=[],
+                hints_to_receive=[],
+                has_hint=False,
+                is_item_link=True,
+                node_name=set_node_name(slot_name=player.name, alias=None, is_item_link=True)
+            ))
+
+    if debug:
+        with open(f"{data_folder}/make-hint-graph-debug/hints_processed_pre.json", "w") as f:
+            json.dump(hints_processed, f, indent=3)
+
+    # TODO - When processing item_links, connect them to the slots they represent
+    # - item_link slot will be finder, slots in the group will be the receiver
+    # Add hints to hints_processed
+    for hint in hints_raw_unique:
+        # Skip hints that were found
+        if not show_found_hints and hint.found:
+            continue
+
+        # TODO - Eventually make this configurable
+        # Skip non-progression hints
+        if hint.item_flags & 0x1 != 0x1:
+            continue
+
+        # Skip received hints from slots that are goaled
+        if not show_goaled_slots and hints_processed[hint.receiving_player].has_goaled:
+            continue
+
+        # Skip slots that have way too many unfound progression hints to find
+        # if hint.finding_player in high_hint_count_slots:
+        #     continue
+
+        location = [k for k, v in room_datapackages[hints_processed[hint.finding_player].game]["location_name_to_id"].items()
+                    if v == hint.location]
+        item = [k for k, v in room_datapackages[hints_processed[hint.receiving_player].game]["item_name_to_id"].items()
+                if v == hint.item]
+
+        hints_processed[hint.finding_player].hints_to_find.append(HintProcessed(
+            finding_player=hint.finding_player,
+            receiving_player=hint.receiving_player,
+            location_name=location[0],
+            item_name=item[0],
+            found=hint.found,
+            entrance=hint.entrance,
+            item_flags=hint.item_flags,
+            status=hint.status
+        ))
+        hints_processed[hint.receiving_player].hints_to_receive.append(HintProcessed(
+            finding_player=hint.finding_player,
+            receiving_player=hint.receiving_player,
+            location_name=location[0],
+            item_name=item[0],
+            found=hint.found,
+            entrance=hint.entrance,
+            item_flags=hint.item_flags,
+            status=hint.status
+        ))
+        hints_processed[hint.receiving_player].has_hint = True
+        hints_processed[hint.finding_player].has_hint = True
+
+    with open(f"{data_folder}/hints_processed.json", "w") as f:
+        json.dump([asdict(hint) for hint in hints_processed], f)
+    with open(f"{data_folder}/hints_last_processed.json", "w") as f:
+        json.dump({"hints_last_processed": datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")}, f)
+
+    return hints_processed
 
 def main():
     parser = argparse.ArgumentParser(
@@ -365,15 +497,16 @@ def main():
     #   slots so maybe just use that instead
     high_hint_count: int = 2147483647
 
+    # TODO - Make loading data from disk only load the required files instead of all of them
     # Load required data from cached API data
     data_folder: str = args.data_folder
     room_data: RoomData = RoomData()
     room_data.load_room_data(data_folder)
-    data_last_fetched = room_data.get_data_last_fetched()
-    slot_mapping = room_data.get_slot_mapping()
-    tracker = room_data.get_tracker()
-    static_tracker = room_data.get_static_tracker()
-    room_datapackages = room_data.get_room_datapackages()
+    data_last_fetched = room_data.get_data_last_fetched()  # Used in a few places
+    slot_mapping = room_data.get_slot_mapping()            # Used everywhere
+    tracker = room_data.get_tracker()                      # Only used in process_hints
+    static_tracker = room_data.get_static_tracker()        # Used in item_link processing, can prob be moved to process_hints
+    room_datapackages = room_data.get_room_datapackages()  # Only used in process_hints
 
     # Validate slot id if it was provided
     hint_subgraph_slot_id: int = -1
@@ -443,131 +576,49 @@ def main():
 
     print(action_string)
 
-    # Flatten all the tracker["hints"][idx]["hints"] into a single list of dicts while getting rid of dupes
-    # Add 1 for the special Archipelago slot at slot 0
-    finding_player_count = [0] * (len(static_tracker["player_game"]) + len(static_tracker["groups"]) + 1)
-    hints_raw_unique: list[Hint] = []
-    for hint_dict in tracker["hints"]:
-        for h in hint_dict["hints"]:
-            hint = Hint._make(h)
-            if hint not in hints_raw_unique:
-                hints_raw_unique.append(hint)
+    # Process the hints or load it from disk
+    hints_processed: list[PlayerHints] | None = None
+    if Path(f"{data_folder}/hints_last_processed.json").is_file():
+        with open(f"{data_folder}/hints_last_processed.json", "r") as f:
+            hints_last_processed = json.load(f)
+        if "hints_last_processed" in hints_last_processed:
+            hints_last_processed_time = datetime.strptime(hints_last_processed["hints_last_processed"], "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
+            data_last_fetched_time = datetime.strptime(fetch_time, "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
+            if hints_last_processed_time >= data_last_fetched_time:
+                start_time = time.perf_counter() 
+                with open(f"{data_folder}/hints_processed.json", "r") as f:
+                    hints_processed = [
+                        PlayerHints(
+                            player_num=hint["player_num"],
+                            slot_name=hint["player_num"],
+                            game=hint["player_num"],
+                            alias=hint["player_num"],
+                            has_goaled=hint["player_num"],
+                            has_hint=hint["player_num"],
+                            is_item_link=hint["player_num"],
+                            node_name=hint["player_num"],
+                            hints_to_find=[HintProcessed(*hint) for hint in hint["hints_to_find"]],
+                            hints_to_receive=[HintProcessed(*hint) for hint in hint["hints_to_receive"]]
+                        )
+                        for hint in json.load(f)
+                    ]
+                end_time = time.perf_counter()
+                execution_time = end_time - start_time
+                print(f"Loading hints from file took {execution_time:.6f} seconds to run")
 
-                # Count how many unfound progression hints a slot has been hinted to find
-                if not hint.found and (hint.item_flags & 0x1 == 1):
-                    finding_player_count[hint.finding_player] += 1
-    high_hint_count_slots = [index + 1 for index, value in enumerate(finding_player_count) if value >= high_hint_count]
-
-    if debug:
-        with open(f"{data_folder}/make-hint-graph-debug/hints_raw_unique.json", "w") as f:
-            json.dump(hints_raw_unique, f, indent=3)
-
-    # Create the initial list of hints with
-    hints_processed: list[PlayerHints] = []
-
-    # Add the special Archipelago slot (also makes indexing 0-based yay!)
-    hints_processed.append(PlayerHints(
-        player_num=0,
-        slot_name="Archipelago",
-        game="Archipelago",
-        alias=None,
-        has_goaled=True,
-        hints_to_find=[],
-        hints_to_receive=[],
-        has_hint=False,
-        is_item_link=False,
-        node_name="Archipelago"
-    ))
-
-    # Add the normal slots
-    for idx, player in enumerate(slot_mapping):
-        if len(player.item_link_members) == 0:
-            hints_processed.append(PlayerHints(
-                player_num=tracker["aliases"][idx]["player"],
-                slot_name=player.name,
-                game=player.game,
-                alias=tracker["aliases"][idx]["alias"],
-                has_goaled=tracker["player_status"][idx]["status"] == 30,
-                hints_to_find=[],
-                hints_to_receive=[],
-                has_hint=False,
-                is_item_link=False,
-                node_name=set_node_name(slot_name=player.name, alias=tracker["aliases"][idx]["alias"], is_item_link=False)
-            ))
-        else:
-            hints_processed.append(PlayerHints(
-                player_num=player.id,
-                slot_name=player.name,
-                game=player.game,
-                alias=None,
-                has_goaled=False,
-                hints_to_find=[],
-                hints_to_receive=[],
-                has_hint=False,
-                is_item_link=True,
-                node_name=set_node_name(slot_name=player.name, alias=None, is_item_link=True)
-            ))
-
-    if debug:
-        with open(f"{data_folder}/make-hint-graph-debug/hints_processed_pre.json", "w") as f:
-            json.dump([asdict(hint) for hint in hints_processed], f, indent=3)
-
-    # TODO - When processing item_links, connect them to the slots they represent
-    # - item_link slot will be finder, slots in the group will be the receiver
-    # Add hints to hints_processed
-    for hint in hints_raw_unique:
-        # Skip hints that were found
-        if not show_found_hints and hint.found:
-            continue
-
-        # TODO - Eventually make this configurable
-        # Skip non-progression hints
-        if hint.item_flags & 0x1 != 0x1:
-            continue
-
-        # Skip received hints from slots that are goaled
-        if not show_goaled_slots and hints_processed[hint.receiving_player].has_goaled:
-            continue
-
-        # Skip slots that have way too many unfound progression hints to find
-        if hint.finding_player in high_hint_count_slots:
-            continue
-
-        location = [k for k, v in room_datapackages[hints_processed[hint.finding_player].game]["location_name_to_id"].items()
-                    if v == hint.location]
-        item = [k for k, v in room_datapackages[hints_processed[hint.receiving_player].game]["item_name_to_id"].items()
-                if v == hint.item]
-
-        hints_processed[hint.finding_player].hints_to_find.append(HintProcessed(
-            finding_player=hint.finding_player,
-            receiving_player=hint.receiving_player,
-            location_name=location[0],
-            item_name=item[0],
-            found=hint.found,
-            entrance=hint.entrance,
-            item_flags=hint.item_flags,
-            status=hint.status
-        ))
-        hints_processed[hint.receiving_player].hints_to_receive.append(HintProcessed(
-            finding_player=hint.finding_player,
-            receiving_player=hint.receiving_player,
-            location_name=location[0],
-            item_name=item[0],
-            found=hint.found,
-            entrance=hint.entrance,
-            item_flags=hint.item_flags,
-            status=hint.status
-        ))
-        hints_processed[hint.receiving_player].has_hint = True
-        hints_processed[hint.finding_player].has_hint = True
-
-    # TODO - Make this better. Probably want to really think about the format of hints_processed.json
-    # TODO - Also probably add a hint_last_processed metadata file so we know if we need to process hints in the first place
-    with open(f"{data_folder}/hints_processed.json", "w") as f:
-        if debug:
-            json.dump([asdict(hint) for hint in hints_processed], f, indent=3)
-        else:
-            json.dump([asdict(hint) for hint in hints_processed], f)
+    if hints_processed is None:
+        start_time = time.perf_counter()
+        hints_processed = process_hints(
+            data_folder=data_folder,
+            tracker=tracker,
+            slot_mapping=slot_mapping,
+            room_datapackages=room_datapackages,
+            show_found_hints=show_found_hints,
+            show_goaled_slots=show_goaled_slots,
+            debug=debug)
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time
+        print(f"Processing hints took {execution_time:.6f} seconds to run")
 
     if hint_mode is HintMode.HINT_GRAPH_MODE or hint_mode is HintMode.HINT_SUBGRAPH_MODE:
         # Create the graph
@@ -635,7 +686,7 @@ def main():
                 dot.add_node(player.player_num, label=player.node_name)
                 for hint in player.hints_to_find:
                     if hint.finding_player in visited_nodes and hint.receiving_player in visited_nodes:
-                        _add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
+                        add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
 
         # TODO - Figure out how this works with hint chains
         # Add item_link edges to all members in the group
@@ -647,7 +698,7 @@ def main():
                                      v=member,
                                      label=f"{item_link["name"]} item_link")
 
-        _save_graph(dot, data_folder, output_filename, output_format, output_engine)
+        save_graph(dot, data_folder, output_filename, output_format, output_engine)
         print()
 
     # Hint chains!
@@ -693,7 +744,7 @@ def main():
 
                     for hint in hints_processed[head_slot_id].hints_to_find:
                         if hint.finding_player == head_slot_id and hint.receiving_player == tail_slot_id:
-                            _add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
+                            add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
 
                 if config.search_last_slot:
                     last_slot_id: int = hint_chain_slot_ids[-1]
@@ -707,10 +758,10 @@ def main():
                     for hint in hints_to_search:
                         dot.add_node(hint.finding_player, label=hints_processed[hint.finding_player].node_name)
                         dot.add_node(hint.receiving_player, label=hints_processed[hint.receiving_player].node_name)
-                        _add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
+                        add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
 
             output_filename = f"{fetch_time}_{name}"
-            _save_graph(dot, data_folder, output_filename, output_format, output_engine)
+            save_graph(dot, data_folder, output_filename, output_format, output_engine)
             print()
 
 
