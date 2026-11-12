@@ -590,13 +590,13 @@ def main():
                     hints_processed = [
                         PlayerHints(
                             player_num=hint["player_num"],
-                            slot_name=hint["player_num"],
-                            game=hint["player_num"],
-                            alias=hint["player_num"],
-                            has_goaled=hint["player_num"],
-                            has_hint=hint["player_num"],
-                            is_item_link=hint["player_num"],
-                            node_name=hint["player_num"],
+                            slot_name=hint["slot_name"],
+                            game=hint["game"],
+                            alias=hint["alias"],
+                            has_goaled=hint["has_goaled"],
+                            has_hint=hint["has_hint"],
+                            is_item_link=hint["is_item_link"],
+                            node_name=hint["node_name"],
                             hints_to_find=[HintProcessed(*hint) for hint in hint["hints_to_find"]],
                             hints_to_receive=[HintProcessed(*hint) for hint in hint["hints_to_receive"]]
                         )
