@@ -24,6 +24,19 @@ def get_file_safe_name(name: str) -> str:
     return "".join(c for c in name if c not in '<>:"/\\|?*')
 
 
+def fix_big_ints(obj):
+    """Fixes big integers by converting them to strings"""
+    MIN_INT64 = -(2**63)
+    MAX_UINT64 = 2**64 - 1
+    if isinstance(obj, int) and (obj < MIN_INT64 or obj > MAX_UINT64):
+        return str(obj)
+    elif isinstance(obj, list):
+        return [fix_big_ints(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {key: fix_big_ints(val) for key, val in obj.items()}
+    return obj
+
+
 class RoomData():
     data_last_fetched: dict[str, datetime] = {}        # Required
     room_datapackages: dict[str, dict[str, Any]] = {}  # Required
@@ -123,7 +136,11 @@ class RoomData():
 
             if not response.is_error:
                 with open(file, "wb") as f:
-                    f.write(orjson.dumps(response.json()))
+                    try:
+                        f.write(orjson.dumps(fix_big_ints(response.json())))
+                    except TypeError as e:
+                        e.add_note(f"Error writing {file} while processing {endpoint_pretty_name} (https://archipelago.gg/api/{endpoint})")
+                        raise e
                 print(f"Wrote {endpoint_pretty_name} to {file}")
                 return response.json()
             else:
