@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import enum
 import io
 from itertools import pairwise
-import json
+import orjson
 import jsonschema
 from pathlib import Path
 from PIL import Image
@@ -25,6 +25,14 @@ script_dir = Path(__file__).resolve().parent
 # So then we can make a python script that does
 # - Process hints into hints_processed.json once
 # - Call the hint graph creation function multiple times with different args depending on what we want
+
+# TODO - put this in some common library file
+def orjson_default(obj):
+    """Passed to orjson.dumps to serialize NamedTuples into dicts"""
+    if hasattr(obj, "_asdict"):
+        return obj._asdict()
+    return obj
+
 
 # https://github.com/ArchipelagoMW/Archipelago/blob/main/docs/network%20protocol.md#hintstatus
 class HintStatus(enum.IntEnum):
@@ -200,8 +208,8 @@ def process_hints(
     # high_hint_count_slots = [index + 1 for index, value in enumerate(finding_player_count) if value >= high_hint_count]
 
     if debug:
-        with open(f"{data_folder}/make-hint-graph-debug/hints_raw_unique.json", "w") as f:
-            json.dump(hints_raw_unique, f, indent=3)
+        with open(f"{data_folder}/make-hint-graph-debug/hints_raw_unique.json", "wb") as f:
+            f.write(orjson.dumps(hints_raw_unique, default=orjson_default, option=orjson.OPT_INDENT_2))
 
     # Create the initial list of hints with
     hints_processed: list[PlayerHints] = []
@@ -250,8 +258,8 @@ def process_hints(
             ))
 
     if debug:
-        with open(f"{data_folder}/make-hint-graph-debug/hints_processed_pre.json", "w") as f:
-            json.dump(hints_processed, f, indent=3)
+        with open(f"{data_folder}/make-hint-graph-debug/hints_processed_pre.json", "wb") as f:
+            f.write(orjson.dumps(hints_processed, option=orjson.OPT_INDENT_2))
 
     # TODO - When processing item_links, connect them to the slots they represent
     # - item_link slot will be finder, slots in the group will be the receiver
@@ -310,10 +318,10 @@ def process_hints(
         hints_processed[hint.receiving_player].has_hint = True
         hints_processed[hint.finding_player].has_hint = True
 
-    with open(f"{data_folder}/hints_processed.json", "w") as f:
-        json.dump([asdict(hint) for hint in hints_processed], f)
-    with open(f"{data_folder}/hints_last_processed.json", "w") as f:
-        json.dump({"hints_last_processed": datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")}, f)
+    with open(f"{data_folder}/hints_processed.json", "wb") as f:
+        f.write(orjson.dumps(hints_processed, default=orjson_default))
+    with open(f"{data_folder}/hints_last_processed.json", "wb") as f:
+        f.write(orjson.dumps({"hints_last_processed": datetime.now(tz=timezone.utc)}))
 
     return hints_processed
 
@@ -529,7 +537,7 @@ def main():
     slot_ids_to_highlight: list[int] = get_slot_ids_from_names(highlight_slots, slot_mapping)
 
     # Create output filename
-    fetch_time: str = data_last_fetched["data_last_fetched"]
+    fetch_time: str = data_last_fetched["data_last_fetched"].strftime("%Y%m%d_%H%M%S")
     output_filename: str = fetch_time
     if args.output_filename is not None:
         output_filename = get_file_safe_name(f"{output_filename}_{args.output_filename}")
@@ -587,14 +595,13 @@ def main():
     # Process the hints or load it from disk
     hints_processed: list[PlayerHints] | None = None
     if Path(f"{data_folder}/hints_last_processed.json").is_file() and Path(f"{data_folder}/hints_processed.json").is_file():
-        with open(f"{data_folder}/hints_last_processed.json", "r") as f:
-            hints_last_processed = json.load(f)
+        with open(f"{data_folder}/hints_last_processed.json", "rb") as f:
+            hints_last_processed = orjson.loads(f.read())
         if "hints_last_processed" in hints_last_processed:
-            hints_last_processed_time = datetime.strptime(hints_last_processed["hints_last_processed"], "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
-            data_last_fetched_time = datetime.strptime(fetch_time, "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
-            if hints_last_processed_time >= data_last_fetched_time:
-                start_time = time.perf_counter() 
-                with open(f"{data_folder}/hints_processed.json", "r") as f:
+            hints_last_processed_time = datetime.fromisoformat(hints_last_processed["hints_last_processed"]).replace(tzinfo=timezone.utc)
+            if hints_last_processed_time >= data_last_fetched["data_last_fetched"]:
+                start_time = time.perf_counter()
+                with open(f"{data_folder}/hints_processed.json", "rb") as f:
                     hints_processed = [
                         PlayerHints(
                             player_num=hint["player_num"],
@@ -605,10 +612,10 @@ def main():
                             has_hint=hint["has_hint"],
                             is_item_link=hint["is_item_link"],
                             node_name=hint["node_name"],
-                            hints_to_find=[HintProcessed(*hint) for hint in hint["hints_to_find"]],
-                            hints_to_receive=[HintProcessed(*hint) for hint in hint["hints_to_receive"]]
+                            hints_to_find=[HintProcessed(**hint) for hint in hint["hints_to_find"]],
+                            hints_to_receive=[HintProcessed(**hint) for hint in hint["hints_to_receive"]]
                         )
-                        for hint in json.load(f)
+                        for hint in orjson.loads(f.read())
                     ]
                 end_time = time.perf_counter()
                 execution_time = end_time - start_time

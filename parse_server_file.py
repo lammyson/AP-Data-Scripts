@@ -1,6 +1,6 @@
 import argparse
 import csv
-import json
+import orjson
 from pathlib import Path
 import sys
 from tabulate import tabulate, SEPARATING_LINE
@@ -10,7 +10,7 @@ from zipfile import ZipFile
 import zlib
 
 
-def convert_sets_to_lists(obj: dict | list | set) -> dict[Any, Any] | list[Any]:
+def convert_sets_to_lists(obj) -> dict[Any, Any] | list[Any]:
     """Recursively converts sets to lists inside a dict or list"""
     if isinstance(obj, dict):
         return {key: convert_sets_to_lists(value) for key, value in obj.items()}
@@ -18,6 +18,13 @@ def convert_sets_to_lists(obj: dict | list | set) -> dict[Any, Any] | list[Any]:
         return [convert_sets_to_lists(item) for item in obj]
     elif isinstance(obj, set):
         return [convert_sets_to_lists(item) for item in obj]
+    return obj
+
+
+def orjson_default(obj):
+    """Passed to orjson.dumps to serialize NamedTuples into dicts"""
+    if hasattr(obj, "_asdict"):
+        return obj._asdict()
     return obj
 
 
@@ -233,6 +240,7 @@ if not file.is_file():
 if not (file.name.lower().endswith(".archipelago") or file.name.lower().endswith(".zip")):
     parser.error(f"file={file} must be a .zip or .archipelago file")
 
+raw_data: bytes = bytes()
 if file.name.lower().endswith(".archipelago"):
     with open(file, 'rb') as f:
         raw_data = f.read()
@@ -249,6 +257,8 @@ elif file.name.lower().endswith(".zip"):
         else:
             raise FileNotFoundError(f"*.archipelago file could not be found in file={file}")
 
+if len(raw_data) == 0:
+    raise FileNotFoundError(f"File {file.name} not found or failed to load")
 
 # Load the .archipelago file
 with warnings.catch_warnings():
@@ -266,8 +276,8 @@ with warnings.catch_warnings():
 
     if debug:
         output_file: Path = Path(f"{file.parent}/{file.stem}.json")
-        with open(output_file, 'w') as f:
-            json.dump(convert_sets_to_lists(multidata), f, indent=2) # pyright: ignore[reportArgumentType]
+        with open(output_file, "wb") as f:
+            f.write(orjson.dumps(convert_sets_to_lists(multidata), default=orjson_default, option=orjson.OPT_NON_STR_KEYS))
         print(f"Saved human readable version of server file to {output_file}")
         print()
 

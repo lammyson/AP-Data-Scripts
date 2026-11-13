@@ -1,6 +1,6 @@
 import argparse
 from dataclasses import asdict, dataclass
-import json
+import orjson
 from pathlib import Path
 from typing import Any
 
@@ -174,10 +174,10 @@ def main():
         parser.error(f"Data folder={args.data_folder} is not a directory")
 
     data_folder: str = args.data_folder
-    with open(f"{data_folder}/slot_mapping.json", "r") as f:
-        slot_mapping: list[SlotMapping] = [SlotMapping(*item) for item in json.load(f)]
-    with open(f"{data_folder}/slot_data_tracker.json", "r") as f:
-        slot_data: list[dict[str, Any]] = json.load(f)
+    with open(f"{data_folder}/slot_mapping.json", "rb") as f:
+        slot_mapping: list[SlotMapping] = [SlotMapping(**slot) for slot in orjson.loads(f.read())]
+    with open(f"{data_folder}/slot_data_tracker.json", "rb") as f:
+        slot_data: list[dict[str, Any]] = orjson.loads(f.read())
 
     # Go through each slot and parse the relevant goal data for each game
     goal_data: list[GoalData] = []
@@ -203,8 +203,8 @@ def main():
         for d in goal_data
     ]
 
-    with open(f"{data_folder}/goal_data.json", "w") as file:
-        json.dump(goal_data_list_filtered, file, indent=3)
+    with open(f"{data_folder}/goal_data.json", "wb") as f:
+        f.write(orjson.dumps(goal_data_list_filtered, option=orjson.OPT_INDENT_2))
     print(f"Saved goal data to to {data_folder}/goal_data.json")
 
 
