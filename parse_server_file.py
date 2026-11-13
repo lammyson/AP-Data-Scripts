@@ -487,11 +487,11 @@ if output_spheres:
 
                     if len(item) == 0:
                         print(f"Unable to find item={item_id} for game {receiving_slot.game} for player {receiving_slot.name} with id={receiving_player_id}")
-                        item.append("Unknown item")
+                        item.append(f"Unknown item: {item_id}")
 
                     if len(location) == 0:
                         print(f"Unable to find location={location_id} for game {finding_slot.game} for player {finding_slot.name} with id={player_id}")
-                        location.append("Unknown location")
+                        location.append(f"Unknown location: {location_id}")
 
                     sphere_table.append(DetailedSphereCsv(
                         id=sphere_id+1,

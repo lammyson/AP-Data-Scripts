@@ -279,6 +279,14 @@ def process_hints(
         item = [k for k, v in room_datapackages[hints_processed[hint.receiving_player].game]["item_name_to_id"].items()
                 if v == hint.item]
 
+        if len(item) == 0:
+            print(f"Unable to find item={hint.item} for game {hints_processed[hint.receiving_player].game} for player {hints_processed[hint.receiving_player].slot_name} with id={hint.receiving_player}")
+            item.append(f"Unknown item: {hint.item}")
+
+        if len(location) == 0:
+            print(f"Unable to find location={hint.location} for game {hints_processed[hint.finding_player].game} for player {hints_processed[hint.finding_player].slot_name} with id={hint.finding_player}")
+            location.append(f"Unknown location: {hint.location}")
+
         hints_processed[hint.finding_player].hints_to_find.append(HintProcessed(
             finding_player=hint.finding_player,
             receiving_player=hint.receiving_player,
@@ -578,7 +586,7 @@ def main():
 
     # Process the hints or load it from disk
     hints_processed: list[PlayerHints] | None = None
-    if Path(f"{data_folder}/hints_last_processed.json").is_file():
+    if Path(f"{data_folder}/hints_last_processed.json").is_file() and Path(f"{data_folder}/hints_processed.json").is_file():
         with open(f"{data_folder}/hints_last_processed.json", "r") as f:
             hints_last_processed = json.load(f)
         if "hints_last_processed" in hints_last_processed:
