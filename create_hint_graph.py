@@ -57,6 +57,7 @@ class Hint(NamedTuple):
 
 class HintProcessed(NamedTuple):
     """Internal hint type to make creating the hint graph easier"""
+    id: int
     finding_player: int
     receiving_player: int
     location_name: str
@@ -65,7 +66,7 @@ class HintProcessed(NamedTuple):
     entrance: str
     item_flags: int
     status: HintStatus
-
+    sphere: int | None = None
 
 @dataclass
 class PlayerHints:
@@ -81,15 +82,17 @@ class PlayerHints:
     hints_to_find: list[HintProcessed]
     hints_to_receive: list[HintProcessed]
 
-
 class HintMode(enum.IntEnum):
     HINT_GRAPH_MODE = 0     # Show the full hint graph
     HINT_SUBGRAPH_MODE = 1  # Show a subgraph from the full hint graph
     HINT_CHAIN_MODE = 2     # Show a smaller set of a subgraph with only certain directions displayed
 
 
+hint_ids_in_graph: list[int] = []
 def add_hint(dot: pygraphviz.AGraph, hint: HintProcessed, merge_hints: bool, show_entrances: bool):
     """Add a hint to the given graph"""
+    global hint_ids_in_graph
+
     if merge_hints:
         label = f"{hint.item_name} at {hint.location_name}"
     else:
@@ -98,9 +101,15 @@ def add_hint(dot: pygraphviz.AGraph, hint: HintProcessed, merge_hints: bool, sho
     if hint.entrance and show_entrances:
         label = f"{label}\n({hint.entrance})"
 
-    if merge_hints and dot.has_edge(hint.finding_player, hint.receiving_player):
-        edge = dot.get_edge(hint.finding_player, hint.receiving_player)
-        edge.attr['label'] = f"{label}\n{edge.attr['label']}"  # pyright: ignore[reportAttributeAccessIssue]
+    if merge_hints:
+        if dot.has_edge(hint.finding_player, hint.receiving_player):
+            if hint.id not in hint_ids_in_graph:
+                hint_ids_in_graph.append(hint.id)
+                edge = dot.get_edge(hint.finding_player, hint.receiving_player)
+                edge.attr['label'] = f"{label}\n{edge.attr['label']}"  # pyright: ignore[reportAttributeAccessIssue]
+        else:
+            dot.add_edge(u=hint.finding_player, v=hint.receiving_player, label=label)
+            hint_ids_in_graph.append(hint.id)
     else:
         dot.add_edge(u=hint.finding_player, v=hint.receiving_player, label=label)
 
@@ -147,6 +156,11 @@ def get_slot_ids_from_names(slot_names: list[str], slot_mapping: list[SlotMappin
         slot_ids.append(matches[0].id)
 
     return slot_ids
+
+
+def get_slot_name_from_id(slot_id: int, slot_mapping: list[SlotMapping]) -> str:
+    slot_name = slot_mapping[slot_id].name
+    return slot_name
 
 
 def set_node_name(slot_name: str, alias: str | None, is_item_link: bool) -> str:
@@ -264,6 +278,7 @@ def process_hints(
     # TODO - When processing item_links, connect them to the slots they represent
     # - item_link slot will be finder, slots in the group will be the receiver
     # Add hints to hints_processed
+    hint_id: int = 0
     for hint in hints_raw_unique:
         # Skip hints that were found
         if not show_found_hints and hint.found:
@@ -296,6 +311,7 @@ def process_hints(
             location.append(f"Unknown location: {hint.location}")
 
         hints_processed[hint.finding_player].hints_to_find.append(HintProcessed(
+            id=hint_id,
             finding_player=hint.finding_player,
             receiving_player=hint.receiving_player,
             location_name=location[0],
@@ -306,6 +322,7 @@ def process_hints(
             status=hint.status
         ))
         hints_processed[hint.receiving_player].hints_to_receive.append(HintProcessed(
+            id=hint_id,
             finding_player=hint.finding_player,
             receiving_player=hint.receiving_player,
             location_name=location[0],
@@ -317,6 +334,7 @@ def process_hints(
         ))
         hints_processed[hint.receiving_player].has_hint = True
         hints_processed[hint.finding_player].has_hint = True
+        hint_id += 1
 
     with open(f"{data_folder}/hints_processed.json", "wb") as f:
         f.write(orjson.dumps(hints_processed, default=orjson_default))
@@ -732,6 +750,10 @@ def main():
         for name, config in hint_chain_config.hint_chain.items():
             dot = pygraphviz.AGraph(directed=True, rankdir=args.graph_rankdir, strict=False)
 
+            # TODO - def wanna refactor this
+            global hint_ids_in_graph
+            hint_ids_in_graph.clear()
+
             print(f"Creating hint chain {name}")
             for config in config:
                 print(f"- Adding hint chain for slots {config.hint_chain_slots} in direction {config.direction}. "
@@ -757,9 +779,14 @@ def main():
                     if head_slot_id is None or tail_slot_id is None:
                         raise RuntimeError("Unable to get slot ids")
 
+                    edge_found = False
                     for hint in hints_processed[head_slot_id].hints_to_find:
                         if hint.finding_player == head_slot_id and hint.receiving_player == tail_slot_id:
                             add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
+                            edge_found = True
+                    if not edge_found:
+                        raise RuntimeError(f"No hints found where {get_slot_name_from_id(head_slot_id-1, slot_mapping)} "
+                                           f"is finding a hint for {get_slot_name_from_id(tail_slot_id-1, slot_mapping)}")
 
                 if config.search_last_slot:
                     last_slot_id: int = hint_chain_slot_ids[-1]
