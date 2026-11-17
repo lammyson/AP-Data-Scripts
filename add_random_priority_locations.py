@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 import yaml
 
+
 def positive_int(val) -> int:
     i: int = int(val)
     if i < 1:
@@ -12,8 +13,7 @@ def positive_int(val) -> int:
 
 
 parser = argparse.ArgumentParser(
-    description=
-    "Does something like `- priority_locations: random` with weighted options for each location")
+    description="Does something like `- priority_locations: random` with weighted options for each location")
 parser.add_argument(
     "-d", "--datapackage-export",
     required=True,
@@ -69,8 +69,8 @@ with open(output_yaml_file, "a") as f:
     for location in datapackage["games"][game]["location_name_to_id"].keys():
         f.write(f"    - option_category: \"{game}\"\n")
         f.write(f"      option_name: \"add_{location}\"\n")
-        f.write(f"      option_result: true\n")
-        f.write(f"      options:\n")
+        f.write("      option_result: true\n")
+        f.write("      options:\n")
         f.write(f"        \"{game}\":\n")
-        f.write(f"          +priority_locations:\n")
+        f.write("          +priority_locations:\n")
         f.write(f"            - \"{location}\"\n")

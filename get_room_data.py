@@ -139,7 +139,8 @@ class RoomData():
                     try:
                         f.write(orjson.dumps(fix_big_ints(response.json())))
                     except TypeError as e:
-                        e.add_note(f"Error writing {file} while processing {endpoint_pretty_name} (https://archipelago.gg/api/{endpoint})")
+                        e.add_note(f"Error writing {file} while processing {endpoint_pretty_name} "
+                                   f"(https://archipelago.gg/api/{endpoint})")
                         raise e
                 print(f"Wrote {endpoint_pretty_name} to {file}")
                 return response.json()
@@ -243,7 +244,11 @@ class RoomData():
                 slot_name = slot_name.replace(alias_string, "")[1:-1]
         return slot_name
 
-    def _checks_table_to_slot_mapping_json(self, checks_table: list[dict[str, Any]], aliases: list[dict[str, Any]], static_tracker: dict[str, Any]):
+    def _checks_table_to_slot_mapping_json(
+            self,
+            checks_table: list[dict[str, Any]],
+            aliases: list[dict[str, Any]],
+            static_tracker: dict[str, Any]):
         players: list[SlotMapping] = []
         for idx, row in enumerate(checks_table):
             players.append(SlotMapping(

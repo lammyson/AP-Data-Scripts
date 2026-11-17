@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import enum
 import io
@@ -25,6 +25,7 @@ script_dir = Path(__file__).resolve().parent
 # So then we can make a python script that does
 # - Process hints into hints_processed.json once
 # - Call the hint graph creation function multiple times with different args depending on what we want
+
 
 # TODO - put this in some common library file
 def orjson_default(obj):
@@ -68,6 +69,7 @@ class HintProcessed(NamedTuple):
     status: HintStatus
     sphere: int | None = None
 
+
 @dataclass
 class PlayerHints:
     """Internal hint type to make creating the hint graph easier"""
@@ -82,6 +84,7 @@ class PlayerHints:
     hints_to_find: list[HintProcessed]
     hints_to_receive: list[HintProcessed]
 
+
 class HintMode(enum.IntEnum):
     HINT_GRAPH_MODE = 0     # Show the full hint graph
     HINT_SUBGRAPH_MODE = 1  # Show a subgraph from the full hint graph
@@ -89,9 +92,10 @@ class HintMode(enum.IntEnum):
 
 
 hint_ids_in_graph: list[int] = []
+
+
 def add_hint(dot: pygraphviz.AGraph, hint: HintProcessed, merge_hints: bool, show_entrances: bool):
     """Add a hint to the given graph"""
-    global hint_ids_in_graph
 
     if merge_hints:
         label = f"{hint.item_name} at {hint.location_name}"
@@ -303,11 +307,13 @@ def process_hints(
                 if v == hint.item]
 
         if len(item) == 0:
-            print(f"Unable to find item={hint.item} for game {hints_processed[hint.receiving_player].game} for player {hints_processed[hint.receiving_player].slot_name} with id={hint.receiving_player}")
+            print(f"Unable to find item={hint.item} for game {hints_processed[hint.receiving_player].game} "
+                  f"for player {hints_processed[hint.receiving_player].slot_name} with id={hint.receiving_player}")
             item.append(f"Unknown item: {hint.item}")
 
         if len(location) == 0:
-            print(f"Unable to find location={hint.location} for game {hints_processed[hint.finding_player].game} for player {hints_processed[hint.finding_player].slot_name} with id={hint.finding_player}")
+            print(f"Unable to find location={hint.location} for game {hints_processed[hint.finding_player].game} "
+                  f"for player {hints_processed[hint.finding_player].slot_name} with id={hint.finding_player}")
             location.append(f"Unknown location: {hint.location}")
 
         hints_processed[hint.finding_player].hints_to_find.append(HintProcessed(
@@ -342,6 +348,7 @@ def process_hints(
         f.write(orjson.dumps({"hints_last_processed": datetime.now(tz=timezone.utc)}))
 
     return hints_processed
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -529,7 +536,7 @@ def main():
     #   are sending them hints, these big slots get pulled in
     # - hint-subgraph-slot and depth options do a good job of reducing the noise of big
     #   slots so maybe just use that instead
-    high_hint_count: int = 2147483647
+    # high_hint_count: int = 2147483647
 
     # TODO - Make loading data from disk only load the required files instead of all of them
     # Load required data from cached API data
@@ -616,7 +623,8 @@ def main():
         with open(f"{data_folder}/hints_last_processed.json", "rb") as f:
             hints_last_processed = orjson.loads(f.read())
         if "hints_last_processed" in hints_last_processed:
-            hints_last_processed_time = datetime.fromisoformat(hints_last_processed["hints_last_processed"]).replace(tzinfo=timezone.utc)
+            hints_last_processed_time = datetime.fromisoformat(
+                hints_last_processed["hints_last_processed"]).replace(tzinfo=timezone.utc)
             if hints_last_processed_time >= data_last_fetched["data_last_fetched"]:
                 start_time = time.perf_counter()
                 with open(f"{data_folder}/hints_processed.json", "rb") as f:
@@ -752,7 +760,7 @@ def main():
 
             # TODO - def wanna refactor this
             global hint_ids_in_graph
-            hint_ids_in_graph.clear()
+            hint_ids_in_graph = []
 
             print(f"Creating hint chain {name}")
             for config in config:

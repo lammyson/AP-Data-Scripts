@@ -290,7 +290,8 @@ for player_id, locations in multidata["locations"].items():
     player_locations: int = len(locations)
     num_locations += player_locations
     num_locations_per_player[player_id] = player_locations
-    num_priority_locations_per_player[player_id] = len([item_id for item_id, receiving_player_id, item_flags in locations.values() if item_flags & 0b1])
+    num_priority_locations_per_player[player_id] = len(
+        [item_id for item_id, receiving_player_id, item_flags in locations.values() if item_flags & 0b1])
 
 num_start_inventory_per_player: list[int] = [0] * (num_players+1)
 num_start_inventory: int = 0
@@ -311,7 +312,7 @@ for player_hints in multidata["precollected_hints"].values():
             num_start_hints_receiver[hint.receiving_player] += 1
 
 # Print a quick summary
-print(f"Quick summary:")
+print("Quick summary:")
 print(f"\tGenerated on version {".".join([str(v) for v in multidata["version"]])}")
 print(f"\tNumber of players={num_players}")
 print(f"\tNumber of locations={num_locations}")
@@ -322,7 +323,9 @@ print()
 
 # Print a detailed summary
 if output_summary:
-    table_headers = ["Id", "Name", "Game", "Locations", "Priority Locations", "Priority %", "Start Hints - Finder", "Start Hints - Receiver", "Start Inventory"]
+    table_headers = [
+        "Id", "Name", "Game", "Locations", "Priority Locations", "Priority %",
+        "Start Hints - Finder", "Start Hints - Receiver", "Start Inventory"]
     table_data: list = []
     for slot_id, player in multidata["slot_info"].items():
         if player.type == SlotType.player:
@@ -332,7 +335,9 @@ if output_summary:
                 game=player.game,
                 locations=num_locations_per_player[slot_id],
                 num_priority_locations=num_priority_locations_per_player[slot_id],
-                num_priority_locations_percent=f"{num_priority_locations_per_player[slot_id] / num_locations_per_player[slot_id] * 100:>7.3f} %",
+                num_priority_locations_percent=(
+                    f"{num_priority_locations_per_player[slot_id] / num_locations_per_player[slot_id] * 100:>7.3f} %"
+                ),
                 num_hints_finder=num_start_hints_finder[slot_id],
                 num_hints_receiver=num_start_hints_receiver[slot_id],
                 num_start_inventory=num_start_inventory_per_player[slot_id]
@@ -360,7 +365,10 @@ if output_summary:
 
     if output_summary_table:
         table_data.append(SEPARATING_LINE)
-        table_data.append(["", "", "Totals", num_locations, sum(num_priority_locations_per_player), "", sum(num_start_hints_finder), sum(num_start_hints_receiver), num_start_inventory])
+        table_data.append([
+            "", "", "Totals", num_locations, sum(num_priority_locations_per_player),
+            f"{sum(num_priority_locations_per_player) / num_locations * 100:>7.3f} %",
+            sum(num_start_hints_finder), sum(num_start_hints_receiver), num_start_inventory])
         print("\nSummary Table")
         print(tabulate(tabular_data=table_data, headers=table_headers, tablefmt="rounded_outline", preserve_whitespace=True))
         print()
@@ -371,8 +379,8 @@ if output_detailed_hints:
     for hint in hints:
         finding_slot = multidata["slot_info"][hint.finding_player]
         receiving_slot = multidata["slot_info"][hint.receiving_player]
-        finding_datapackage = multidata["datapackage"][finding_slot.game]["location_name_to_id"] # pyright: ignore[reportTypedDictNotRequiredAccess]
-        receiving_datapackage = multidata["datapackage"][receiving_slot.game]["item_name_to_id"] # pyright: ignore[reportTypedDictNotRequiredAccess]
+        finding_datapackage = multidata["datapackage"][finding_slot.game]["location_name_to_id"]
+        receiving_datapackage = multidata["datapackage"][receiving_slot.game]["item_name_to_id"]
 
         location = [k for k, v in finding_datapackage.items() if v == hint.location]
         item = [k for k, v in receiving_datapackage.items() if v == hint.item]
@@ -387,7 +395,9 @@ if output_detailed_hints:
             entrance=hint.entrance
         ))
 
-    table_headers: list[str] = ["Finder", "Receiver", "Item", "Classification", "Location", "Finding Game", "Receiving Game", "Entrance"]
+    table_headers: list[str] = [
+        "Finder", "Receiver", "Item", "Classification", "Location", "Finding Game", "Receiving Game", "Entrance"
+    ]
     if output_hints_csv:
         output_file: Path = Path(f"{file.parent}/{file.stem}_start_hints.csv")
         with open(output_file, 'w') as f:
@@ -463,7 +473,9 @@ if output_spheres:
                 player_names.append(multidata["slot_info"][player_id].name)
                 num_sphere_locations += len(location_ids)
             rolling_location_count += num_sphere_locations
-            sphere_table.append([sphere_id+1, len(player_ids), num_sphere_locations, rolling_location_count, f"{rolling_location_count / num_locations * 100:>7.3f} %"])
+            sphere_table.append([
+                sphere_id+1, len(player_ids), num_sphere_locations, rolling_location_count,
+                f"{rolling_location_count / num_locations * 100:>7.3f} %"])
 
         table_headers: list[str] = ["Sphere Id", "Num Players", "Num Locations", "Total Locations", "Location %"]
         if output_spheres_summary_csv:
@@ -476,7 +488,8 @@ if output_spheres:
 
         if output_spheres_summary_table:
             print("\nSpheres summary")
-            print(tabulate(tabular_data=sphere_table, headers=table_headers, tablefmt="rounded_outline", preserve_whitespace=True))
+            print(tabulate(tabular_data=sphere_table, headers=table_headers, tablefmt="rounded_outline",
+                           preserve_whitespace=True))
             print()
 
     # Detailed spheres
@@ -485,22 +498,24 @@ if output_spheres:
         for sphere_id, sphere in enumerate(multidata["spheres"]):
             for player_id, location_ids in sphere.items():
                 finding_slot = multidata["slot_info"][player_id]
-                finding_datapackage = multidata["datapackage"][finding_slot.game]["location_name_to_id"] # pyright: ignore[reportTypedDictNotRequiredAccess]
+                finding_datapackage = multidata["datapackage"][finding_slot.game]["location_name_to_id"]
 
                 for location_id in location_ids:
                     item_id, receiving_player_id, item_flags = multidata["locations"][player_id][location_id]
                     receiving_slot = multidata["slot_info"][receiving_player_id]
-                    receiving_datapackage = multidata["datapackage"][receiving_slot.game]["item_name_to_id"] # pyright: ignore[reportTypedDictNotRequiredAccess]
+                    receiving_datapackage = multidata["datapackage"][receiving_slot.game]["item_name_to_id"]
 
                     location = [k for k, v in finding_datapackage.items() if v == location_id]
                     item = [k for k, v in receiving_datapackage.items() if v == item_id]
 
                     if len(item) == 0:
-                        print(f"Unable to find item={item_id} for game {receiving_slot.game} for player {receiving_slot.name} with id={receiving_player_id}")
+                        print(f"Unable to find item={item_id} for game {receiving_slot.game} "
+                              f"for player {receiving_slot.name} with id={receiving_player_id}")
                         item.append(f"Unknown item: {item_id}")
 
                     if len(location) == 0:
-                        print(f"Unable to find location={location_id} for game {finding_slot.game} for player {finding_slot.name} with id={player_id}")
+                        print(f"Unable to find location={location_id} for game {finding_slot.game} "
+                              f"for player {finding_slot.name} with id={player_id}")
                         location.append(f"Unknown location: {location_id}")
 
                     sphere_table.append(DetailedSphereCsv(
@@ -513,7 +528,9 @@ if output_spheres:
                         item_classification=item_flags_to_string(item_flags)
                     ))
 
-        table_headers: list[str] = ["Sphere Id", "Finding Player", "Receiving Player", "Game", "Location", "Item", "Classification"]
+        table_headers: list[str] = [
+            "Sphere Id", "Finding Player", "Receiving Player", "Game", "Location", "Item", "Classification"
+        ]
         if output_spheres_detailed_csv:
             output_file: Path = Path(f"{file.parent}/{file.stem}_spheres_detailed.csv")
             with open(output_file, 'w') as f:
