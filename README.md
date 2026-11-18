@@ -10,6 +10,7 @@ Click on the links to go to a detailed description of that script
     - Loops can artificially inflate the number of nodes
 - [`create_goal_data.py`](#create_goal_datapy) - Creates goal data json file from room data. Only supports some games
 - [`parse_server_file.py`](#parse_server_filepy) - Parses a `.archipelago` server file and prints some info from it
+- [`add_random_priority_locations.py`](#add_random_priority_locationspy) - Modifies a player yaml to do something like `priority_locations: random`
 
 Run each python script with the `-h` or `--help` argument to see what you can do
 ```bash
@@ -24,6 +25,7 @@ flowchart TD;
    B[create_hint_graph.py];
    C[create_goal_data.py];
    D[parse_server_file.py];
+   E[add_random_priority_locations.py];
    A --> B;
    A --> C;
 ```
@@ -86,6 +88,34 @@ Depends on [`get_room_data.py`](#get_room_datapy)
 
 ## [`parse_server_file.py`](parse_server_file.py)
 Parses the `*.archipelago` file that's part of a multiworld generation's output and outputs a bunch of data from that file
+
+## [`add_random_priority_locations.py`](add_random_priority_locations.py)
+Modifies a player yaml to add a random amount of priority locations. Adds a block like the following to the end of the yaml file
+```yaml
+  "add_location_1":
+    true: 1
+    false: 1
+  "add_location_2":
+    true: 1
+    false: 1
+...
+  triggers:
+    - option_category: "<game>"
+      option_name: "add_location_1"
+      option_result: true
+      options:
+        "<game>":
+          +priority_locations:
+            - "location_1"
+    - option_category: "<game>"
+      option_name: "add_location_2"
+      option_result: true
+      options:
+        "<game>":
+          +priority_locations:
+            - "location_2"
+...
+```
 
 # Credits
 - [Archipelago](https://archipelago.gg) - [source](https://github.com/ArchipelagoMW/Archipelago)
