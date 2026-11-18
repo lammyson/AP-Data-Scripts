@@ -455,7 +455,7 @@ class RoomData():
                 return {}
         return self._suuids
 
-    def _verify_suuid(self, suuid: str | None, suuid_type : Literal["room_suuid", "tracker_suuid"]):
+    def _verify_suuid(self, suuid: str | None, suuid_type: Literal["room_suuid", "tracker_suuid"]):
         """Verify the provided suuid matches the suuid from suuids.json if both exist"""
         file_suuids = self._load_suuids()
         if suuid and file_suuids:

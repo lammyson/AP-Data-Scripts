@@ -80,7 +80,8 @@ if concise:
         f.write("  triggers:\n")
         for location in datapackage["games"][game]["location_name_to_id"].keys():
             orjson.dumps
-            f.write(f"    - {{option_category: \"{game}\", option_name: \"add_{location}\", option_result: true, options: {{\"{game}\": {{+priority_locations: [\"{location}\"]}}}}}}\n")
+            f.write(f"    - {{option_category: \"{game}\", option_name: \"add_{location}\", option_result: true, "
+                    f"options: {{\"{game}\": {{+priority_locations: [\"{location}\"]}}}}}}\n")
 else:
     with open(output_yaml_file, "a") as f:
         f.write("\n")
