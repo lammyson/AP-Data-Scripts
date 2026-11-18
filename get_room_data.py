@@ -38,7 +38,9 @@ def fix_big_ints(obj):
     return obj
 
 
+# TODO - We may just wanna load all the data on startup anyways
 class LoadDataType(IntFlag):
+    """Future type to only load just the data required"""
     DATA_LAST_FETCHED = auto()
     ROOM_STATUS = auto()
     ROOM_DATAPACKAGES = auto()
@@ -48,10 +50,9 @@ class LoadDataType(IntFlag):
     TRACKER = auto()
 
 
-LOADDATATYPE_ALL = ~LoadDataType(0)
-
-
+# TODO - Do we want to add hints_processed.json to this?
 class RoomData():
+    """Class that holds all of a room's data"""
     data_last_fetched: dict[str, datetime] = {}        # Required
     room_datapackages: dict[str, dict[str, Any]] = {}  # Required
     room_status: dict[str, Any] = {}                   # Optional
@@ -134,6 +135,155 @@ class RoomData():
             if "data_last_fetched" in data_last_fetched:
                 self.data_last_fetched["data_last_fetched"] = datetime.fromisoformat(
                     data_last_fetched["data_last_fetched"]).replace(tzinfo=timezone.utc)
+
+    async def download_room_data(
+            self,
+            room_folder: Path,
+            room_suuid: str | None = None,
+            tracker_suuid: str | None = None,
+            verbose: bool = False,
+            debug: bool = False):
+        """Download data from the Webhost API into the room folder"""
+        self._room_suuid = room_suuid
+        self._tracker_suuid = tracker_suuid
+        self._room_folder = room_folder
+        self._verbose = verbose
+        self._debug = debug
+
+        # Verify only one suuid argument is set
+        if (room_suuid is None) == (tracker_suuid is None):
+            raise ValueError("Only one of room_suuid or tracker_suuid must be defined")
+
+        # Create output folder and get the current time
+        Path(room_folder).mkdir(parents=True, exist_ok=True)
+        datapackage_path.mkdir(parents=True, exist_ok=True)
+        now_time = datetime.now(tz=timezone.utc)
+
+        # Verify the time the data was last fetched so that we don't request data too quickly
+        cache_timeout_s = 1800
+        if Path(f"{room_folder}/data_last_fetched.json").is_file():
+            try:
+                with open(f"{room_folder}/data_last_fetched.json", "rb") as f:
+                    data_last_fetched = orjson.loads(f.read())
+            except orjson.JSONDecodeError:
+                data_last_fetched = {}
+
+            if "data_last_fetched" in data_last_fetched:
+                old_time = datetime.fromisoformat(data_last_fetched["data_last_fetched"]).replace(tzinfo=timezone.utc)
+                if (now_time - old_time).seconds <= cache_timeout_s:
+                    print(f"Data was last downloaded {(now_time - old_time).seconds} seconds ago "
+                          f"which is less than the {cache_timeout_s} second ({cache_timeout_s/60:g} minute) cache timer. "
+                          "Not downloading room data")
+                    exit(0)
+
+        if room_suuid:
+            print(f"Using room_suuid={room_suuid}")
+            self._verify_suuid(room_suuid, "room_suuid")
+        else:
+            print(f"Using tracker_suuid={tracker_suuid}")
+            self._verify_suuid(tracker_suuid, "tracker_suuid")
+
+        sem = asyncio.Semaphore(4)
+        async with httpx2.AsyncClient(timeout=60) as client:
+            room_status: dict[str, Any] | None = None
+            checks_table: list[dict[str, Any]] | None = None
+            if room_suuid:
+                # /room_status/<suuid:room_id>
+                # Cache timer: None
+                room_status = await self._download_from_endpoint_to_file(
+                    endpoint=f"room_status/{room_suuid}",
+                    endpoint_pretty_name="room_status",
+                    file=Path(f"{room_folder}/room_status.json"),
+                    client=client,
+                    semaphore=sem)
+                tracker_suuid = room_status["tracker"]
+                self._verify_suuid(tracker_suuid, "tracker_suuid")
+            else:
+                tracker_html = await self._download_from_html_to_file(
+                    endpoint=f"tracker/{tracker_suuid}",
+                    endpoint_pretty_name="tracker html",
+                    file=Path(f"{room_folder}/get_room_data_debug/tracker.html"),
+                    client=client,
+                    semaphore=sem)
+                checks_table = self._parse_tracker_checks_table(tracker_html=tracker_html)
+
+            suuids = {}
+            if room_suuid:
+                suuids.update({"room_suuid": room_suuid})
+            if tracker_suuid:
+                suuids.update({"tracker_suuid": tracker_suuid})
+            with open(f"{room_folder}/suuids.json", "wb") as f:
+                f.write(orjson.dumps(suuids))
+            print(f"Wrote suuids to {room_folder}/suuids.json")
+
+            async with asyncio.TaskGroup() as tg:
+                # /tracker/<suuid:tracker>
+                # Cache timer: 60 seconds
+                tracker_task = tg.create_task(self._download_from_endpoint_to_file(
+                    endpoint=f"tracker/{tracker_suuid}",
+                    endpoint_pretty_name="tracker",
+                    file=Path(f"{room_folder}/tracker.json"),
+                    client=client,
+                    semaphore=sem))
+
+                # /static_tracker/<suuid:tracker>
+                # Cache timer: 300 seconds
+                static_tracker_task = tg.create_task(self._download_from_endpoint_to_file(
+                    endpoint=f"static_tracker/{tracker_suuid}",
+                    endpoint_pretty_name="static_tracker",
+                    file=Path(f"{room_folder}/static_tracker.json"),
+                    client=client,
+                    semaphore=sem))
+
+                # /slot_data_tracker/<suuid:tracker>
+                # Cache timer: 300 seconds
+                tg.create_task(self._download_from_endpoint_to_file(
+                    endpoint=f"slot_data_tracker/{tracker_suuid}",
+                    endpoint_pretty_name="slot_data_tracker",
+                    file=Path(f"{room_folder}/slot_data_tracker.json"),
+                    client=client,
+                    semaphore=sem,
+                    raise_error=False))
+
+            tracker = tracker_task.result()
+            static_tracker = static_tracker_task.result()
+
+            if room_status is not None:
+                self._room_status_to_slot_mapping_json(
+                    room_status=room_status,
+                    static_tracker=static_tracker)
+            if checks_table is not None:
+                self._checks_table_to_slot_mapping_json(
+                    checks_table=checks_table,
+                    aliases=tracker["aliases"],
+                    static_tracker=static_tracker)
+
+            async with asyncio.TaskGroup() as tg:
+                for game, data in static_tracker["datapackage"].items():
+                    safe_game_name: str = get_file_safe_name(game)
+                    checksum: str = data["checksum"]
+                    game_folder = Path(f"{datapackage_path}/{safe_game_name}")
+                    datapackage_file = Path(f"{game_folder}/{checksum}.json")
+                    if not datapackage_file.is_file():
+                        Path.mkdir(game_folder, parents=True, exist_ok=True)
+
+                        # /datapackage/<string:checksum>
+                        # Cache timer: None
+                        tg.create_task(self._download_from_endpoint_to_file(
+                            endpoint=f"datapackage/{checksum}",
+                            endpoint_pretty_name=f"{game} datapackage",
+                            file=datapackage_file,
+                            client=client,
+                            semaphore=sem))
+
+        # Remove old files from previous iterations of this script
+        Path(f"{room_folder}/players.json").unlink(missing_ok=True)
+        Path(f"{room_folder}/last_fetched.json").unlink(missing_ok=True)
+
+        data_last_fetched_json = {"data_last_fetched": datetime.now(tz=timezone.utc)}
+        with open(f"{room_folder}/data_last_fetched.json", "wb") as f:
+            f.write(orjson.dumps(data_last_fetched_json))
+        print(f"Wrote data_last_fetched to {room_folder}/data_last_fetched.json")
 
     async def _download_from_endpoint_to_file(
             self,
@@ -359,155 +509,6 @@ class RoomData():
         self._room_folder = args.room_folder
         self._verbose = args.verbose
         self._debug = args.debug
-
-    async def download_room_data(
-            self,
-            room_folder: Path,
-            room_suuid: str | None = None,
-            tracker_suuid: str | None = None,
-            verbose: bool = False,
-            debug: bool = False):
-        """Download data from the Webhost API into the room folder"""
-        self._room_suuid = room_suuid
-        self._tracker_suuid = tracker_suuid
-        self._room_folder = room_folder
-        self._verbose = verbose
-        self._debug = debug
-
-        # Verify only one suuid argument is set
-        if (room_suuid is None) == (tracker_suuid is None):
-            raise ValueError("Only one of room_suuid or tracker_suuid must be defined")
-
-        # Create output folder and get the current time
-        Path(room_folder).mkdir(parents=True, exist_ok=True)
-        datapackage_path.mkdir(parents=True, exist_ok=True)
-        now_time = datetime.now(tz=timezone.utc)
-
-        # Verify the time the data was last fetched so that we don't request data too quickly
-        cache_timeout_s = 1800
-        if Path(f"{room_folder}/data_last_fetched.json").is_file():
-            try:
-                with open(f"{room_folder}/data_last_fetched.json", "rb") as f:
-                    data_last_fetched = orjson.loads(f.read())
-            except orjson.JSONDecodeError:
-                data_last_fetched = {}
-
-            if "data_last_fetched" in data_last_fetched:
-                old_time = datetime.fromisoformat(data_last_fetched["data_last_fetched"]).replace(tzinfo=timezone.utc)
-                if (now_time - old_time).seconds <= cache_timeout_s:
-                    print(f"Data was last downloaded {(now_time - old_time).seconds} seconds ago "
-                          f"which is less than the {cache_timeout_s} second ({cache_timeout_s/60:g} minute) cache timer. "
-                          "Not downloading room data")
-                    exit(0)
-
-        if room_suuid:
-            print(f"Using room_suuid={room_suuid}")
-            self._verify_suuid(room_suuid, "room_suuid")
-        else:
-            print(f"Using tracker_suuid={tracker_suuid}")
-            self._verify_suuid(tracker_suuid, "tracker_suuid")
-
-        sem = asyncio.Semaphore(4)
-        async with httpx2.AsyncClient(timeout=60) as client:
-            room_status: dict[str, Any] | None = None
-            checks_table: list[dict[str, Any]] | None = None
-            if room_suuid:
-                # /room_status/<suuid:room_id>
-                # Cache timer: None
-                room_status = await self._download_from_endpoint_to_file(
-                    endpoint=f"room_status/{room_suuid}",
-                    endpoint_pretty_name="room_status",
-                    file=Path(f"{room_folder}/room_status.json"),
-                    client=client,
-                    semaphore=sem)
-                tracker_suuid = room_status["tracker"]
-                self._verify_suuid(tracker_suuid, "tracker_suuid")
-            else:
-                tracker_html = await self._download_from_html_to_file(
-                    endpoint=f"tracker/{tracker_suuid}",
-                    endpoint_pretty_name="tracker html",
-                    file=Path(f"{room_folder}/get_room_data_debug/tracker.html"),
-                    client=client,
-                    semaphore=sem)
-                checks_table = self._parse_tracker_checks_table(tracker_html=tracker_html)
-
-            suuids = {}
-            if room_suuid:
-                suuids.update({"room_suuid": room_suuid})
-            if tracker_suuid:
-                suuids.update({"tracker_suuid": tracker_suuid})
-            with open(f"{room_folder}/suuids.json", "wb") as f:
-                f.write(orjson.dumps(suuids))
-            print(f"Wrote suuids to {room_folder}/suuids.json")
-
-            async with asyncio.TaskGroup() as tg:
-                # /tracker/<suuid:tracker>
-                # Cache timer: 60 seconds
-                tracker_task = tg.create_task(self._download_from_endpoint_to_file(
-                    endpoint=f"tracker/{tracker_suuid}",
-                    endpoint_pretty_name="tracker",
-                    file=Path(f"{room_folder}/tracker.json"),
-                    client=client,
-                    semaphore=sem))
-
-                # /static_tracker/<suuid:tracker>
-                # Cache timer: 300 seconds
-                static_tracker_task = tg.create_task(self._download_from_endpoint_to_file(
-                    endpoint=f"static_tracker/{tracker_suuid}",
-                    endpoint_pretty_name="static_tracker",
-                    file=Path(f"{room_folder}/static_tracker.json"),
-                    client=client,
-                    semaphore=sem))
-
-                # /slot_data_tracker/<suuid:tracker>
-                # Cache timer: 300 seconds
-                tg.create_task(self._download_from_endpoint_to_file(
-                    endpoint=f"slot_data_tracker/{tracker_suuid}",
-                    endpoint_pretty_name="slot_data_tracker",
-                    file=Path(f"{room_folder}/slot_data_tracker.json"),
-                    client=client,
-                    semaphore=sem,
-                    raise_error=False))
-
-            tracker = tracker_task.result()
-            static_tracker = static_tracker_task.result()
-
-            if room_status is not None:
-                self._room_status_to_slot_mapping_json(
-                    room_status=room_status,
-                    static_tracker=static_tracker)
-            if checks_table is not None:
-                self._checks_table_to_slot_mapping_json(
-                    checks_table=checks_table,
-                    aliases=tracker["aliases"],
-                    static_tracker=static_tracker)
-
-            async with asyncio.TaskGroup() as tg:
-                for game, data in static_tracker["datapackage"].items():
-                    safe_game_name: str = get_file_safe_name(game)
-                    checksum: str = data["checksum"]
-                    game_folder = Path(f"{datapackage_path}/{safe_game_name}")
-                    datapackage_file = Path(f"{game_folder}/{checksum}.json")
-                    if not datapackage_file.is_file():
-                        Path.mkdir(game_folder, parents=True, exist_ok=True)
-
-                        # /datapackage/<string:checksum>
-                        # Cache timer: None
-                        tg.create_task(self._download_from_endpoint_to_file(
-                            endpoint=f"datapackage/{checksum}",
-                            endpoint_pretty_name=f"{game} datapackage",
-                            file=datapackage_file,
-                            client=client,
-                            semaphore=sem))
-
-        # Remove old files from previous iterations of this script
-        Path(f"{room_folder}/players.json").unlink(missing_ok=True)
-        Path(f"{room_folder}/last_fetched.json").unlink(missing_ok=True)
-
-        data_last_fetched_json = {"data_last_fetched": datetime.now(tz=timezone.utc)}
-        with open(f"{room_folder}/data_last_fetched.json", "wb") as f:
-            f.write(orjson.dumps(data_last_fetched_json))
-        print(f"Wrote data_last_fetched to {room_folder}/data_last_fetched.json")
 
     async def _main(self):
         self._parse_arguments()

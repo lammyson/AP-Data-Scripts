@@ -38,10 +38,16 @@ parser.add_argument(
     default=1,
     metavar="WEIGHT",
     help="Weight for the false option. Default is 1")
+parser.add_argument(
+    "-c", "--concise",
+    default=False,
+    action="store_true",
+    help="Print the triggers in a more concise way")
 args = parser.parse_args()
 
 true_weight: int = args.true_weight
 false_weight: int = args.false_weight
+concise: bool = args.concise
 
 datapackage_file: Path = args.datapackage_export
 player_yaml_file: Path = args.player_yaml
@@ -54,23 +60,43 @@ with open(player_yaml_file, "rb") as f:
 
 game: str = player_yaml["game"]
 
-print(f"Writing new yaml to {output_yaml_file}")
+print(f"Using {{true: {true_weight}, false: {false_weight}}} for weights")
+print(f"Total possible locations: {len(datapackage["games"][game]["location_name_to_id"])}")
+
+adverb = "verbosely"
+if concise:
+    adverb = "concisely"
+print(f"Writing new yaml to {output_yaml_file} {adverb}")
 Path.copy(player_yaml_file, output_yaml_file)
-with open(output_yaml_file, "a") as f:
-    f.write("\n")
 
-    for location in datapackage["games"][game]["location_name_to_id"].keys():
-        f.write(f"  \"add_{location}\":\n")
-        f.write(f"    true: {true_weight}\n")
-        f.write(f"    false: {false_weight}\n")
-    f.write("\n")
+if concise:
+    with open(output_yaml_file, "a") as f:
+        f.write("\n")
 
-    f.write("  triggers:\n")
-    for location in datapackage["games"][game]["location_name_to_id"].keys():
-        f.write(f"    - option_category: \"{game}\"\n")
-        f.write(f"      option_name: \"add_{location}\"\n")
-        f.write("      option_result: true\n")
-        f.write("      options:\n")
-        f.write(f"        \"{game}\":\n")
-        f.write("          +priority_locations:\n")
-        f.write(f"            - \"{location}\"\n")
+        for location in datapackage["games"][game]["location_name_to_id"].keys():
+            f.write(f"  \"add_{location}\": {{true: {true_weight}, false: {false_weight}}}\n")
+        f.write("\n")
+
+        f.write("  triggers:\n")
+        for location in datapackage["games"][game]["location_name_to_id"].keys():
+            orjson.dumps
+            f.write(f"    - {{option_category: \"{game}\", option_name: \"add_{location}\", option_result: true, options: {{\"{game}\": {{+priority_locations: [\"{location}\"]}}}}}}\n")
+else:
+    with open(output_yaml_file, "a") as f:
+        f.write("\n")
+
+        for location in datapackage["games"][game]["location_name_to_id"].keys():
+            f.write(f"  \"add_{location}\":\n")
+            f.write(f"    true: {true_weight}\n")
+            f.write(f"    false: {false_weight}\n")
+        f.write("\n")
+
+        f.write("  triggers:\n")
+        for location in datapackage["games"][game]["location_name_to_id"].keys():
+            f.write(f"    - option_category: \"{game}\"\n")
+            f.write(f"      option_name: \"add_{location}\"\n")
+            f.write("      option_result: true\n")
+            f.write("      options:\n")
+            f.write(f"        \"{game}\":\n")
+            f.write("          +priority_locations:\n")
+            f.write(f"            - \"{location}\"\n")
