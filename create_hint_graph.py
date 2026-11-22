@@ -13,6 +13,7 @@ from PIL import Image
 import pygraphviz
 from typing import NamedTuple
 import time
+import warnings
 import yaml
 
 from get_room_data import get_file_safe_name, RoomData, SlotMapping
@@ -793,8 +794,8 @@ def main():
                             add_hint(dot, hint, merge_hints=merge_hints, show_entrances=show_entrances)
                             edge_found = True
                     if not edge_found:
-                        raise RuntimeError(f"No hints found where {get_slot_name_from_id(head_slot_id-1, slot_mapping)} "
-                                           f"is finding a hint for {get_slot_name_from_id(tail_slot_id-1, slot_mapping)}")
+                        warnings.warn(f"No hints found where {get_slot_name_from_id(head_slot_id-1, slot_mapping)} "
+                                      f"is finding a hint for {get_slot_name_from_id(tail_slot_id-1, slot_mapping)}")
 
                 if config.search_last_slot:
                     last_slot_id: int = hint_chain_slot_ids[-1]
