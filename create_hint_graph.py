@@ -47,10 +47,10 @@ def get_slot_ids_from_names(slot_names: list[str], slot_mapping: list[SlotMappin
 
         if len(matches) == 0:
             raise KeyError(f"slot_name={slot_name} not found in slot_mapping.json. "
-                        "Please check your spelling")
+                           "Please check your spelling")
         elif len(matches) >= 2:
             raise KeyError(f"slot_name={slot_name} found multiple times. This should never happen. "
-                        "Run get-room-info.py to pull fresh data")
+                           "Run get-room-info.py to pull fresh data")
 
         slot_ids.append(matches[0].id)
 
@@ -131,6 +131,17 @@ class HintChainConfig(NamedTuple):
     hint_chain: dict[str, list[SingleChain]]
 
 
+def _validate_yaml(yaml_file: str, schema_file: str):
+    with open(yaml_file, "r") as f:
+        yaml_data = yaml.safe_load(f)
+    with open(schema_file, "r") as f:
+        schema_data = yaml.safe_load(f)
+    try:
+        jsonschema.validate(yaml_data, schema_data)
+    except jsonschema.ValidationError as e:
+        raise jsonschema.ValidationError(f"{e.message} at {e.absolute_path}")
+
+
 class HintGrapher():
     _hint_ids_in_graph: list[int] = []
 
@@ -188,50 +199,82 @@ class HintGrapher():
             node_name = f"{slot_name}"
         return node_name
 
-    def _validate_yaml(self, yaml_file: str, schema_file: str):
-        with open(yaml_file, "r") as f:
-            yaml_data = yaml.safe_load(f)
-        with open(schema_file, "r") as f:
-            schema_data = yaml.safe_load(f)
-        try:
-            jsonschema.validate(yaml_data, schema_data)
-        except jsonschema.ValidationError as e:
-            raise jsonschema.ValidationError(f"{e.message} at {e.absolute_path}")
-
-    def _process_hints(
+    def process_hints(
             self,
             data_folder: str | Path,
             tracker: dict,
             slot_mapping: list[SlotMapping],
-            room_datapackages: dict,
-            show_found_hints: bool,
-            show_goaled_slots: bool,
-            debug: bool = False) -> list[PlayerHints]:
+            room_datapackages: dict) -> list[HintProcessed]:
+        """
+        Processes hints by removing duplicate hints between the finding and receiving players and performs the
+        location and item name lookups
+        """
 
         # Flatten all the tracker["hints"][idx]["hints"] into a single list of dicts while getting rid of dupes
         # Add 1 for the special Archipelago slot at slot 0
         # finding_player_count = [0] * (len(static_tracker["player_game"]) + len(static_tracker["groups"]) + 1)
-        hints_raw_unique: list[Hint] = []
-        for hint_dict in tracker["hints"]:
-            for h in hint_dict["hints"]:
-                hint = Hint._make(h)
-                if hint not in hints_raw_unique:
-                    hints_raw_unique.append(hint)
+        hints_seen: list[Hint] = []
+        hints_unique: list[HintProcessed] = []
+        hint_id: int = 0
+        for player_hints in tracker["hints"]:
+            for h in player_hints["hints"]:
+                hint = Hint(*h)
+                if hint not in hints_seen:
+                    hints_seen.append(hint)
 
-                    # Count how many unfound progression hints a slot has been hinted to find
-                    # if not hint.found and (hint.item_flags & 0x1 == 1):
-                    #     finding_player_count[hint.finding_player] += 1
-        # high_hint_count_slots = [index + 1 for index, value in enumerate(finding_player_count) if value >= high_hint_count]
+                    finding_player = [slot for slot in slot_mapping if hint.finding_player == slot.id][0]
+                    receiving_player = [slot for slot in slot_mapping if hint.receiving_player == slot.id][0]
 
-        if debug:
-            with open(f"{data_folder}/make-hint-graph-debug/hints_raw_unique.json", "wb") as f:
-                f.write(orjson.dumps(hints_raw_unique, default=orjson_default, option=orjson.OPT_INDENT_2))
+                    location = [location_name for location_name, location_id in room_datapackages[finding_player.game]["location_name_to_id"].items()
+                                if location_id == hint.location]
+                    item = [item_name for item_name, item_id in room_datapackages[receiving_player.game]["item_name_to_id"].items()
+                            if item_id == hint.item]
+
+                    if len(item) == 0:
+                        print(f"Unable to find item={hint.item} for game {receiving_player.game} "
+                              f"for player {receiving_player.name} with id={hint.receiving_player}")
+                        item.append(f"Unknown item: {hint.item}")
+                    if len(location) == 0:
+                        print(f"Unable to find location={hint.location} for game {finding_player.game} "
+                              f"for player {finding_player.name} with id={hint.finding_player}")
+                        location.append(f"Unknown location: {hint.location}")
+
+                    hints_unique.append(HintProcessed(
+                        id=hint_id,
+                        finding_player=hint.finding_player,
+                        receiving_player=hint.receiving_player,
+                        location_name=location[0],
+                        item_name=item[0],
+                        found=hint.found,
+                        entrance=hint.entrance,
+                        item_flags=hint.item_flags,
+                        status=hint.status,
+                        sphere=None
+                    ))
+                    hint_id += 1
+
+        with open(f"{data_folder}/hints.json", "wb") as f:
+            f.write(orjson.dumps(hints_unique, default=orjson_default))
+        with open(f"{data_folder}/hints_last_processed.json", "wb") as f:
+            f.write(orjson.dumps({"hints_last_processed": datetime.now(tz=timezone.utc)}))
+
+        return hints_unique
+
+    # TODO - Just take the data_folder as input?
+    def filter_hints(
+            self,
+            hints: list[HintProcessed],
+            tracker: dict,
+            slot_mapping: list[SlotMapping],
+            show_found_hints: bool = False,
+            show_goaled_slots: bool = False) -> list[PlayerHints]:
+        """Filters hints based on the configured inputs"""
 
         # Create the initial list of hints with
-        hints_processed: list[PlayerHints] = []
+        hints_filtered: list[PlayerHints] = []
 
         # Add the special Archipelago slot (also makes indexing 0-based yay!)
-        hints_processed.append(PlayerHints(
+        hints_filtered.append(PlayerHints(
             player_num=0,
             slot_name="Archipelago",
             game="Archipelago",
@@ -247,7 +290,7 @@ class HintGrapher():
         # Add the normal slots
         for idx, player in enumerate(slot_mapping):
             if len(player.item_link_members) == 0:
-                hints_processed.append(PlayerHints(
+                hints_filtered.append(PlayerHints(
                     player_num=tracker["aliases"][idx]["player"],
                     slot_name=player.name,
                     game=player.game,
@@ -260,7 +303,7 @@ class HintGrapher():
                     node_name=self._set_node_name(slot_name=player.name, alias=tracker["aliases"][idx]["alias"], is_item_link=False)
                 ))
             else:
-                hints_processed.append(PlayerHints(
+                hints_filtered.append(PlayerHints(
                     player_num=player.id,
                     slot_name=player.name,
                     game=player.game,
@@ -273,15 +316,8 @@ class HintGrapher():
                     node_name=self._set_node_name(slot_name=player.name, alias=None, is_item_link=True)
                 ))
 
-        if debug:
-            with open(f"{data_folder}/make-hint-graph-debug/hints_processed_pre.json", "wb") as f:
-                f.write(orjson.dumps(hints_processed, option=orjson.OPT_INDENT_2))
-
-        # TODO - When processing item_links, connect them to the slots they represent
-        # - item_link slot will be finder, slots in the group will be the receiver
         # Add hints to hints_processed
-        hint_id: int = 0
-        for hint in hints_raw_unique:
+        for hint in hints:
             # Skip hints that were found
             if not show_found_hints and hint.found:
                 continue
@@ -292,60 +328,15 @@ class HintGrapher():
                 continue
 
             # Skip received hints from slots that are goaled
-            if not show_goaled_slots and hints_processed[hint.receiving_player].has_goaled:
+            if not show_goaled_slots and hints_filtered[hint.receiving_player].has_goaled:
                 continue
 
-            # Skip slots that have way too many unfound progression hints to find
-            # if hint.finding_player in high_hint_count_slots:
-            #     continue
+            hints_filtered[hint.finding_player].hints_to_find.append(hint)
+            hints_filtered[hint.receiving_player].hints_to_receive.append(hint)
+            hints_filtered[hint.finding_player].has_hint = True
+            hints_filtered[hint.receiving_player].has_hint = True
 
-            location = [k for k, v in room_datapackages[hints_processed[hint.finding_player].game]["location_name_to_id"].items()
-                        if v == hint.location]
-            item = [k for k, v in room_datapackages[hints_processed[hint.receiving_player].game]["item_name_to_id"].items()
-                    if v == hint.item]
-
-            if len(item) == 0:
-                print(f"Unable to find item={hint.item} for game {hints_processed[hint.receiving_player].game} "
-                    f"for player {hints_processed[hint.receiving_player].slot_name} with id={hint.receiving_player}")
-                item.append(f"Unknown item: {hint.item}")
-
-            if len(location) == 0:
-                print(f"Unable to find location={hint.location} for game {hints_processed[hint.finding_player].game} "
-                    f"for player {hints_processed[hint.finding_player].slot_name} with id={hint.finding_player}")
-                location.append(f"Unknown location: {hint.location}")
-
-            hints_processed[hint.finding_player].hints_to_find.append(HintProcessed(
-                id=hint_id,
-                finding_player=hint.finding_player,
-                receiving_player=hint.receiving_player,
-                location_name=location[0],
-                item_name=item[0],
-                found=hint.found,
-                entrance=hint.entrance,
-                item_flags=hint.item_flags,
-                status=hint.status
-            ))
-            hints_processed[hint.receiving_player].hints_to_receive.append(HintProcessed(
-                id=hint_id,
-                finding_player=hint.finding_player,
-                receiving_player=hint.receiving_player,
-                location_name=location[0],
-                item_name=item[0],
-                found=hint.found,
-                entrance=hint.entrance,
-                item_flags=hint.item_flags,
-                status=hint.status
-            ))
-            hints_processed[hint.receiving_player].has_hint = True
-            hints_processed[hint.finding_player].has_hint = True
-            hint_id += 1
-
-        with open(f"{data_folder}/hints_processed.json", "wb") as f:
-            f.write(orjson.dumps(hints_processed, default=orjson_default))
-        with open(f"{data_folder}/hints_last_processed.json", "wb") as f:
-            f.write(orjson.dumps({"hints_last_processed": datetime.now(tz=timezone.utc)}))
-
-        return hints_processed
+        return hints_filtered
 
     # def _parse_arguments(self):
     def _main(self):
@@ -365,6 +356,11 @@ class HintGrapher():
             default=False,
             action="store_true",
             help=argparse.SUPPRESS)
+        parser.add_argument(
+            "-v", "--verbose",
+            default=False,
+            action="store_true",
+            help="Print more information")
         parser.add_argument(
             "--show-entrances",
             default=False,
@@ -451,11 +447,12 @@ class HintGrapher():
             default="LR",
             choices=["LR", "RL", "TB", "BT"],
             help="Graph layout direction. "
-                "LR (left to right), RL (right to left), TB (top to bottom), BT (bottom to top). "
-                "Default is LR.")
+                 "LR (left to right), RL (right to left), TB (top to bottom), BT (bottom to top). "
+                 "Default is LR.")
 
         args = parser.parse_args()
         debug: bool = args.debug
+        verbose: bool = args.verbose
 
         if debug:
             print("Just after argument parsing")
@@ -515,12 +512,12 @@ class HintGrapher():
             parser.error("The --hint-subgraph-slot argument is required when using --depth|--child-depth|--parent-depth")
         if hint_subgraph_slot_provided and not depth_option_provided:
             parser.error("At least one of the --depth|--child-depth|--parent-depth arguments are required "
-                        "when using --hint-subgraph-slot")
+                         "when using --hint-subgraph-slot")
 
         hint_chain_enabled: bool = args.hint_chain_config
         if hint_chain_enabled and hint_subgraph_enabled:
             parser.error("hint chain options and hint subgraph options were both enabled but only one can be enabled at a time. "
-                        "Only provide options for one or the other or none at all")
+                         "Only provide options for one or the other or none at all")
 
         hint_mode: HintMode = HintMode.HINT_GRAPH_MODE
         if hint_subgraph_enabled:
@@ -528,24 +525,21 @@ class HintGrapher():
         elif hint_chain_enabled:
             hint_mode = HintMode.HINT_CHAIN_MODE
 
-        # TODO - Filter out nodes with >= some number of hints to find - Make this configurable
-        # - Kinda broken. It filters out players that have high numbers of hints to find
-        #   but when players that have hints to receive are looking for the slots that
-        #   are sending them hints, these big slots get pulled in
-        # - hint-subgraph-slot and depth options do a good job of reducing the noise of big
-        #   slots so maybe just use that instead
-        # high_hint_count: int = 2147483647
-
         # TODO - Make loading data from disk only load the required files instead of all of them
         # Load required data from cached API data
+        start_time = time.perf_counter()
         data_folder: str = args.data_folder
         room_data: RoomData = RoomData()
         room_data.load_room_data(data_folder)
         data_last_fetched = room_data.get_data_last_fetched()  # Used in a few places
         slot_mapping = room_data.get_slot_mapping()            # Used everywhere
-        tracker = room_data.get_tracker()                      # Only used in process_hints
+        tracker = room_data.get_tracker()                      # Used in process_hints and filter_hints
         static_tracker = room_data.get_static_tracker()        # Used in item_link processing, can prob be moved to process_hints
         room_datapackages = room_data.get_room_datapackages()  # Only used in process_hints
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time
+        if verbose:
+            print(f"Loading room data took {execution_time:.6f} seconds to run")
 
         # Validate slot id if it was provided
         hint_subgraph_slot_id: int = -1
@@ -619,8 +613,8 @@ class HintGrapher():
         print(action_string)
 
         # Process the hints or load it from disk
-        hints_processed: list[PlayerHints] | None = None
-        if Path(f"{data_folder}/hints_last_processed.json").is_file() and Path(f"{data_folder}/hints_processed.json").is_file():
+        hints: list[HintProcessed] | None = None
+        if Path(f"{data_folder}/hints_last_processed.json").is_file() and Path(f"{data_folder}/hints.json").is_file():
             with open(f"{data_folder}/hints_last_processed.json", "rb") as f:
                 hints_last_processed = orjson.loads(f.read())
             if "hints_last_processed" in hints_last_processed:
@@ -628,39 +622,36 @@ class HintGrapher():
                     hints_last_processed["hints_last_processed"]).replace(tzinfo=timezone.utc)
                 if hints_last_processed_time >= data_last_fetched["data_last_fetched"]:
                     start_time = time.perf_counter()
-                    with open(f"{data_folder}/hints_processed.json", "rb") as f:
-                        hints_processed = [
-                            PlayerHints(
-                                player_num=hint["player_num"],
-                                slot_name=hint["slot_name"],
-                                game=hint["game"],
-                                alias=hint["alias"],
-                                has_goaled=hint["has_goaled"],
-                                has_hint=hint["has_hint"],
-                                is_item_link=hint["is_item_link"],
-                                node_name=hint["node_name"],
-                                hints_to_find=[HintProcessed(**hint) for hint in hint["hints_to_find"]],
-                                hints_to_receive=[HintProcessed(**hint) for hint in hint["hints_to_receive"]]
-                            )
-                            for hint in orjson.loads(f.read())
-                        ]
+                    with open(f"{data_folder}/hints.json", "rb") as f:
+                        hints = [HintProcessed(**hint) for hint in orjson.loads(f.read())]
                     end_time = time.perf_counter()
                     execution_time = end_time - start_time
-                    print(f"Loading hints from file took {execution_time:.6f} seconds to run")
+                    if verbose:
+                        print(f"Loading hints from file took {execution_time:.6f} seconds to run")
 
-        if hints_processed is None:
+        if hints is None:
             start_time = time.perf_counter()
-            hints_processed = self._process_hints(
+            hints = self.process_hints(
                 data_folder=data_folder,
                 tracker=tracker,
                 slot_mapping=slot_mapping,
-                room_datapackages=room_datapackages,
-                show_found_hints=show_found_hints,
-                show_goaled_slots=show_goaled_slots,
-                debug=debug)
+                room_datapackages=room_datapackages)
             end_time = time.perf_counter()
             execution_time = end_time - start_time
-            print(f"Processing hints took {execution_time:.6f} seconds to run")
+            if verbose:
+                print(f"Processing hints took {execution_time:.6f} seconds to run")
+
+        start_time = time.perf_counter()
+        hints_processed: list[PlayerHints] = self.filter_hints(
+            hints=hints,
+            tracker=tracker,
+            slot_mapping=slot_mapping,
+            show_found_hints=show_found_hints,
+            show_goaled_slots=show_goaled_slots)
+        end_time = time.perf_counter()
+        execution_time = end_time - start_time
+        if verbose:
+            print(f"Filtering hints took {execution_time:.6f} seconds to run")
 
         if hint_mode is HintMode.HINT_GRAPH_MODE or hint_mode is HintMode.HINT_SUBGRAPH_MODE:
             # Create the graph
@@ -670,11 +661,11 @@ class HintGrapher():
             if slot_ids_to_highlight:
                 for slot_id in slot_ids_to_highlight:
                     dot.add_node(hints_processed[slot_id].player_num,
-                                label=hints_processed[slot_id].node_name,
-                                color="darkgreen",
-                                fillcolor="darkgreen",
-                                style="filled",
-                                fontcolor="white")
+                                 label=hints_processed[slot_id].node_name,
+                                 color="darkgreen",
+                                 fillcolor="darkgreen",
+                                 style="filled",
+                                 fontcolor="white")
 
             # Create list of nodes to show
             visited_nodes: set[int] = set()
@@ -737,8 +728,8 @@ class HintGrapher():
                     for member in item_link["members"]:
                         if dot.has_node(member):
                             dot.add_edge(u=item_link["slot"],
-                                        v=member,
-                                        label=f"{item_link["name"]} item_link")
+                                         v=member,
+                                         label=f"{item_link["name"]} item_link")
 
             self._save_graph(dot, data_folder, output_filename, output_format, output_engine)
             print()
@@ -750,7 +741,7 @@ class HintGrapher():
             with open(args.hint_chain_config, "r") as f:
                 hint_chain_data: dict[str, list] = yaml.safe_load(f)
 
-            self._validate_yaml(args.hint_chain_config, f"{script_dir}/schema/hint-chain-schema.json")
+            _validate_yaml(args.hint_chain_config, f"{script_dir}/schema/hint-chain-schema.json")
             hint_chain_config: HintChainConfig = HintChainConfig({
                 hint_chain_name: [HintChainConfig.SingleChain(**datum) for datum in hint_chain_list]
                 for hint_chain_name, hint_chain_list in hint_chain_data.items()
@@ -763,7 +754,7 @@ class HintGrapher():
                 print(f"Creating hint chain {name}")
                 for config in config:
                     print(f"- Adding hint chain for slots {config.hint_chain_slots} in direction {config.direction}. "
-                        f"search_last_slot={config.search_last_slot}")
+                          f"search_last_slot={config.search_last_slot}")
                     hint_chain_slot_ids: list[int] = get_slot_ids_from_names(config.hint_chain_slots, slot_mapping)
 
                     # Add all slots to the hint chain
@@ -812,6 +803,9 @@ class HintGrapher():
                 self._save_graph(dot, data_folder, output_filename, output_format, output_engine)
                 print()
 
+        # Remove old files from previous iterations of this script
+        Path(f"{data_folder}/hints_processed.json").unlink(missing_ok=True)
+
     # def _main(self):
     #     self._parse_arguments()
     #     self.create_hint_graph(
@@ -820,6 +814,7 @@ class HintGrapher():
     #         tracker_suuid=self._tracker_suuid,
     #         verbose=self._verbose,
     #         debug=self._debug)
+
 
 if __name__ == "__main__":
     HintGrapher()._main()
